@@ -27,6 +27,13 @@ from typing import Literal, Optional, TypedDict
 from typing_extensions import NotRequired
 
 
+class Clan(TypedDict):
+    identity_guild_id: Snowflake
+    identity_enabled: bool
+    tag: str
+    badge: str
+
+
 class AvatarDecorationData(TypedDict):
     asset: str
     sku_id: Snowflake
@@ -54,3 +61,4 @@ class User(PartialUser, total=False):
     flags: int
     premium_type: PremiumType
     public_flags: int
+    clan: NotRequired[Optional[UserClan]]

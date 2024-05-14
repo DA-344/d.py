@@ -335,6 +335,15 @@ class Asset(AssetMixin):
             animated=animated,
         )
 
+    @classmethod
+    def _from_clan_badge(cls, state: _State, guild_id: int, badge_hash: str) -> Self:
+        return cls(
+            state,
+            url=f'{cls.BASE}/clan-badges/{guild_id}/{badge_hash}.png',
+            key=badge_hash,
+            animated=False,
+        )
+
     def __str__(self) -> str:
         return self._url
 

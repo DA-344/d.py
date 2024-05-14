@@ -43,7 +43,12 @@ if TYPE_CHECKING:
     from .message import Message
     from .state import ConnectionState
     from .types.channel import DMChannel as DMChannelPayload
-    from .types.user import PartialUser as PartialUserPayload, User as UserPayload, AvatarDecorationData
+    from .types.user import (
+        PartialUser as PartialUserPayload,
+        User as UserPayload,
+        AvatarDecorationData,
+        Clan as ClanPayload
+    )
 
 
 __all__ = (
@@ -55,6 +60,43 @@ __all__ = (
 class _UserTag:
     __slots__ = ()
     id: int
+
+
+class ClanInfo:
+    """Represents a clan's info of a user.
+
+    Attributes
+    ----------
+    guild_id: :class:`int`
+        The guild ID this clan represents.
+    tag: :class:`str`
+        The text of the user's clan tag.
+    enabled: :class:`bool`
+        Whether the user is displaying their clan tag.
+    badge: :class:`Asset`
+        The clan badge asset.
+    """
+
+    __slots__ = (
+        'guild_id',
+        'tag',
+        'enabled',
+        'badge',
+        '_state',
+    )
+
+    def __init__(self, *, data: ClanPayload, state: ConnectionState) -> None:
+        self.guild_id: int = int(data['identity_guild_id'])
+        self.tag: str = data['tag']
+        self.enabled: bool = data['identity_enabled']
+        self.badge: Asset = Asset._from_clan_badge(state, self.guild_id, data['badge'])
+
+        self._state: ConnectionState = state
+
+    @property
+    def guild(self) -> Optional[Guild]:
+        """Optional[:class:`Guild`]: The guild this clan info represents."""
+        return self._state._get_guild(self.guild_id)
 
 
 class BaseUser(_UserTag):
@@ -71,6 +113,7 @@ class BaseUser(_UserTag):
         '_public_flags',
         '_state',
         '_avatar_decoration_data',
+        'clan',
     )
 
     if TYPE_CHECKING:
@@ -86,6 +129,7 @@ class BaseUser(_UserTag):
         _accent_colour: Optional[int]
         _public_flags: int
         _avatar_decoration_data: Optional[AvatarDecorationData]
+        clan: Optional[ClanInfo]
 
     def __init__(self, *, state: ConnectionState, data: Union[UserPayload, PartialUserPayload]) -> None:
         self._state = state
@@ -123,6 +167,10 @@ class BaseUser(_UserTag):
         self.bot = data.get('bot', False)
         self.system = data.get('system', False)
         self._avatar_decoration_data = data.get('avatar_decoration_data')
+        try:
+            self.clan: Optional[ClanInfo] = ClanInfo(data=data['clan'], state=self._state)
+        except KeyError:
+            self.clan: Optional[ClanInfo] = None
 
     @classmethod
     def _copy(cls, user: Self) -> Self:
