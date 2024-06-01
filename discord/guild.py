@@ -4439,3 +4439,33 @@ class Guild(Hashable):
             return False
 
         return self.dms_paused_until > utils.utcnow()
+
+    def is_clan(self) -> bool:
+        """:class:`bool`: Whether this guild is a clan.
+
+        .. versionadded:: 2.4
+        """
+        return 'CLAN' in self.features
+
+    async def member_verification(self) -> Optional[MemberVerification]:
+        """|coro|
+
+        Fetches the member verification of this guild.
+
+        Only doable if the guild is a clan.
+
+        Raises
+        ------
+        ClientException
+            This guild is not a clan.
+
+        Returns
+        -------
+        Optional[:class:`MemberVerification`]
+            This guild member verification, or ``None``.
+        """
+
+        if not self.is_clan():
+            raise ClientException('This guild is not a clan')
+
+        data = await self._state.http.get_guild_member_verification(self.id)
