@@ -1792,8 +1792,22 @@ class HTTPClient:
     def edit_incident_actions(self, guild_id: Snowflake, payload: guild.IncidentData) -> Response[guild.IncidentData]:
         return self.request(Route('PUT', '/guilds/{guild_id}/incident-actions', guild_id=guild_id), json=payload)
 
-    def get_guild_member_verification(self, guild_id: Snowflake, *, with_guild: bool = False) -> Response[guild.MemberVerification]:
-        return self.request(Route('GET', '/guilds/{guild_id}/member-verification', guild_id=guild_id), params={'with_guild': with_guild})
+    def get_guild_member_verification(
+        self,
+        guild_id: Snowflake,
+        *,
+        with_guild: bool = MISSING,
+        invite_code: Optional[str] = MISSING,
+    ) -> Response[guild.MemberVerification]:
+        params = {}
+
+        if with_guild is not MISSING:
+            params['with_guild'] = with_guild
+
+        if invite_code is not MISSING:
+            params['invite_code'] = invite_code
+
+        return self.request(Route('GET', '/guilds/{guild_id}/member-verification', guild_id=guild_id), params=params)
 
     # Invite management
 
