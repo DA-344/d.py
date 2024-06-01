@@ -66,6 +66,9 @@ GuildFeature = Literal[
     'APPLICATION_COMMAND_PERMISSIONS_V2',
     'AUTO_MODERATION',
     'BANNER',
+    'CLAN',
+    'CLAN_PILOT_GENSHIN',
+    'CLAN_PILOT_VALORANT',
     'COMMUNITY',
     'CREATOR_MONETIZABLE_PROVISIONAL',
     'CREATOR_STORE_PAGE',
@@ -75,6 +78,7 @@ GuildFeature = Literal[
     'INVITE_SPLASH',
     'INVITES_DISABLED',
     'MEMBER_VERIFICATION_GATE_ENABLED',
+    'MEMBER_VERIFICATION_MANUAL_APPROVAL',
     'MONETIZATION_ENABLED',
     'MORE_EMOJI',
     'MORE_STICKERS',
@@ -90,6 +94,11 @@ GuildFeature = Literal[
     'VIP_REGIONS',
     'WELCOME_SCREEN_ENABLED',
     'RAID_ALERTS_DISABLED',
+]
+MemberVerificationFieldType = Literal[
+    'TEXT_INPUT',
+    'PARAGRAPH',
+    'MULTIPLE_CHOICE',
 ]
 
 
@@ -190,3 +199,20 @@ class RolePositionUpdate(_RolePositionRequired, total=False):
 class BulkBanUserResponse(TypedDict):
     banned_users: Optional[List[Snowflake]]
     failed_users: Optional[List[Snowflake]]
+
+
+class MemberVerificationField(TypedDict):
+    field_type: MemberVerificationFieldType
+    label: str
+    description: Optional[str]
+    automations: Optional[List]
+    required: bool
+    placeholder: Optional[str]
+    choices: NotRequired[List[str]]
+
+
+class MemberVerification(TypedDict):
+    version: str
+    form_fields: List[MemberVerificationField]
+    description: Optional[str]
+    guild: NotRequired[GuildPreview]
