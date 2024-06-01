@@ -67,8 +67,10 @@ GuildFeature = Literal[
     'AUTO_MODERATION',
     'BANNER',
     'CLAN',
+    'CLAN_DISCOVERY_DISABLED',
     'CLAN_PILOT_GENSHIN',
     'CLAN_PILOT_VALORANT',
+    'CLAN_SAFETY_REVIEW_DISABLED',
     'COMMUNITY',
     'CREATOR_MONETIZABLE_PROVISIONAL',
     'CREATOR_STORE_PAGE',
@@ -77,6 +79,7 @@ GuildFeature = Literal[
     'FEATURABLE',
     'INVITE_SPLASH',
     'INVITES_DISABLED',
+    'MEMBER_PROFILES',
     'MEMBER_VERIFICATION_GATE_ENABLED',
     'MEMBER_VERIFICATION_MANUAL_APPROVAL',
     'MONETIZATION_ENABLED',
@@ -96,7 +99,6 @@ GuildFeature = Literal[
     'RAID_ALERTS_DISABLED',
 ]
 MemberVerificationFieldType = Literal[
-    'TEXT_INPUT',
     'PARAGRAPH',
     'MULTIPLE_CHOICE',
 ]
@@ -112,6 +114,7 @@ class _BaseGuildPreview(UnavailableGuild):
     features: List[GuildFeature]
     description: Optional[str]
     incidents_data: Optional[IncidentData]
+    home_header: NotRequired[Optional[str]]
 
 
 class _GuildPreviewUnique(TypedDict):
@@ -207,7 +210,7 @@ class MemberVerificationField(TypedDict):
     description: Optional[str]
     automations: Optional[List]
     required: bool
-    placeholder: Optional[str]
+    placeholder: NotRequired[str]
     choices: NotRequired[List[str]]
 
 
