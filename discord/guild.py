@@ -94,6 +94,7 @@ from .object import OLDEST_OBJECT, Object
 from .welcome_screen import WelcomeScreen, WelcomeChannel
 from .automod import AutoModRule, AutoModTrigger, AutoModRuleAction
 from .partial_emoji import _EmojiTag, PartialEmoji
+from .member_verification import MemberVerification
 
 
 __all__ = (
@@ -4431,7 +4432,7 @@ class Guild(Hashable):
         """
         return 'CLAN' in self.features
 
-    async def member_verification(self) -> Optional[MemberVerification]:
+    async def member_verification(self) -> MemberVerification:
         """|coro|
 
         Fetches the member verification of this guild.
@@ -4445,11 +4446,13 @@ class Guild(Hashable):
 
         Returns
         -------
-        Optional[:class:`MemberVerification`]
-            This guild member verification, or ``None``.
+        :class:`MemberVerification`
+            This guild member verification.
         """
 
         if not self.is_clan():
             raise ClientException('This guild is not a clan')
 
         data = await self._state.http.get_guild_member_verification(self.id)
+
+        return MemberVerification(data)
