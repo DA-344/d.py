@@ -74,6 +74,7 @@ __all__ = (
     'EntitlementType',
     'EntitlementOwnerType',
     'PollLayoutType',
+    'MemberVerificationFieldType',
 )
 
 
@@ -833,6 +834,11 @@ class InviteType(Enum):
 class ReactionType(Enum):
     normal = 0
     burst = 1
+
+
+class MemberVerificationFieldType(Enum):
+    choice = 'MULTIPLE_CHOICE'
+    paragraph = 'PARAGRAPH'
 
 
 def create_unknown_value(cls: Type[E], val: Any) -> E:
