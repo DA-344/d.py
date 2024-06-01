@@ -807,6 +807,10 @@ class InteractionResponse(Generic[ClientT]):
             then it is silently ignored.
 
             .. versionadded:: 2.1
+        poll: :class:`~discord.Poll`
+            The poll to send with this message.
+
+            .. versionadded:: 2.4
 
         Raises
         -------
@@ -1045,38 +1049,6 @@ class InteractionResponse(Generic[ClientT]):
         if not modal.is_finished():
             self._parent._state.store_view(modal)
         self._response_type = InteractionResponseType.modal
-
-    async def require_premium(self) -> None:
-        """|coro|
-
-        Sends a message to the user prompting them that a premium purchase is required for this interaction.
-
-        This type of response is only available for applications that have a premium SKU set up.
-
-        Raises
-        -------
-        HTTPException
-            Sending the response failed.
-        InteractionResponded
-            This interaction has already been responded to before.
-        """
-        if self._response_type:
-            raise InteractionResponded(self._parent)
-
-        parent = self._parent
-        adapter = async_context.get()
-        http = parent._state.http
-
-        params = interaction_response_params(InteractionResponseType.premium_required.value)
-        await adapter.create_interaction_response(
-            parent.id,
-            parent.token,
-            session=parent._session,
-            proxy=http.proxy,
-            proxy_auth=http.proxy_auth,
-            params=params,
-        )
-        self._response_type = InteractionResponseType.premium_required
 
     async def autocomplete(self, choices: Sequence[Choice[ChoiceT]]) -> None:
         """|coro|
