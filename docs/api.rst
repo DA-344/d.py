@@ -1060,7 +1060,7 @@ Polls
 
     .. note::
 
-        If the poll allows multiple answers and the user removes or adds multiple votes, this
+        If the poll allows multiple answers and the user adds or removes multiple votes, this
         event will be called as many times as votes that are added or removed.
 
     .. versionadded:: 2.4
@@ -1080,7 +1080,7 @@ Polls
 
     .. note::
 
-        If the poll allows multiple answers and the user removes or adds multiple votes, this
+        If the poll allows multiple answers and the user adds or removes multiple votes, this
         event will be called as many times as votes that are added or removed.
 
     .. versionadded:: 2.4
