@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.
 from __future__ import annotations
 
 
-from typing import Optional, List, TYPE_CHECKING, Union, AsyncIterator, Dict
+from typing import Optional, List, TYPE_CHECKING, Union, AsyncIterator, Dict, overload
 
 import datetime
 
@@ -111,36 +111,62 @@ class PollAnswer:
 
         .. describe:: str(x)
 
-            Returns this answer's text, if any.
+            Returns this answer display text.
 
     .. versionadded:: 2.4
 
-    Attributes
+    Parameters
     ----------
-    id: :class:`int`
-        The ID of this answer.
     media: :class:`PollMedia`
-        The display data for this answer.
-    self_voted: :class:`bool`
-        Whether the current user has voted to this answer or not.
+        The media of this answer. Can't be combined with ``text``.
+    text: :class:`str`
+        The text of this answer. Can't be combined with ``media``.
+    emoji: Union[:class:`PartialEmoji`, :class:`Emoji`, :class:`str`]
+        The emoji of this answer. Must be combined with ``text``.
     """
 
     __slots__ = ('media', 'id', '_state', '_message', '_vote_count', 'self_voted', '_poll')
 
+    @overload
+    def __init__(
+        self,
+        media: PollMedia,
+    ) -> None:
+        ...
+
+    @overload
     def __init__(
         self,
         *,
-        message: Optional[Message],
-        poll: Poll,
-        data: PollAnswerWithIDPayload,
+        text: str,
+        emoji: Optional[Union[PartialEmoji, Emoji, str]] = None,
     ) -> None:
-        self.media: PollMedia = PollMedia.from_dict(data=data['poll_media'])
-        self.id: int = int(data['answer_id'])
-        self._message: Optional[Message] = message
-        self._state: Optional[ConnectionState] = message._state if message else None
-        self._vote_count: int = 0
+        ...
+
+    def __init__(
+        self,
+        media: PollMedia = MISSING,
+        *,
+        text: str = MISSING,
+        emoji: Optional[Union[PartialEmoji, Emoji, str]] = None,
+    ) -> None:
+        if media is MISSING:
+            if text is MISSING:
+                raise ValueError(
+                    'Must provide \'media\' or \'text\''
+                )
+
+            self.media: PollMedia = PollMedia(text, emoji)
+        else:
+            self.media: PollMedia = media
+
+        self.id: int = MISSING  # This will be a value AFTER added to a poll
         self.self_voted: bool = False
-        self._poll: Poll = poll
+
+        self._message: Optional[Message] = None
+        self._state: Optional[ConnectionState] = None
+        self._vote_count: int = 0
+        self._poll: Poll = MISSING  # This will be a value AFTER added to a poll
 
     def _handle_vote_event(self, added: bool, self_voted: bool) -> None:
         if added:
@@ -153,6 +179,12 @@ class PollAnswer:
         self._vote_count = int(payload['count'])
         self.self_voted = payload['me_voted']
 
+    def _update(self, id: int, poll: Poll) -> None:
+        self.id = id
+        self._poll = poll
+        self._message = poll._message
+        self._state = poll._state
+
     def __str__(self) -> str:
         return self.media.text
 
@@ -160,25 +192,11 @@ class PollAnswer:
         return f'<PollAnswer id={self.id} media={self.media!r}>'
 
     @classmethod
-    def from_params(
-        cls,
-        id: int,
-        text: str,
-        emoji: Optional[PollMediaEmoji] = None,
-        *,
-        poll: Poll,
-        message: Optional[Message],
-    ) -> Self:
-        poll_media: PollMediaPayload = {'text': text}
-        if emoji is not None:
-            emoji = PartialEmoji.from_str(emoji) if isinstance(emoji, str) else emoji._to_partial()
-            emoji_data = emoji.to_dict()
-            # No need to remove animated key as it will be ignored
-            poll_media['emoji'] = emoji_data
+    def from_data(cls, *, data: PollAnswerWithIDPayload, poll: Poll) -> PollAnswer:
+        self = cls(media=PollMedia.from_dict(data=data['poll_media']))
+        self._update(int(data['answer_id']), poll)
 
-        payload: PollAnswerWithIDPayload = {'answer_id': id, 'poll_media': poll_media}
-
-        return cls(data=payload, message=message, poll=poll)
+        return self
 
     @property
     def text(self) -> str:
@@ -307,12 +325,14 @@ class Poll:
     question: Union[:class:`PollMedia`, :class:`str`]
         The poll's displayed question. The text can be up to 300 characters.
     duration: :class:`datetime.timedelta`
-        The duration of the poll. Duration must be in hours.
+        The duration of the poll. Must be in hours.
     multiple: :class:`bool`
         Whether users are allowed to select more than one answer.
         Defaults to ``False``.
     layout_type: :class:`PollLayoutType`
         The layout type of the poll. Defaults to :attr:`PollLayoutType.default`.
+    answers: List[:class:`PollAnswer`]
+        The answers this poll will have. This can also be done by using :meth:`add_answer`.
     """
 
     __slots__ = (
@@ -334,9 +354,19 @@ class Poll:
         *,
         multiple: bool = False,
         layout_type: PollLayoutType = PollLayoutType.default,
+        answers: List[PollAnswer] = MISSING,
     ) -> None:
         self._question_media: PollMedia = PollMedia(text=question, emoji=None) if isinstance(question, str) else question
         self._answers: Dict[int, PollAnswer] = {}
+
+        if answers is not MISSING:
+            for answer_id, answer in enumerate(answers, 1):
+                answer.id = answer_id
+                answer._poll = self
+                # At the moment just set a value for poll as that is the
+                # only value we have.
+                self._answers[answer_id] = answer
+
         self.duration: datetime.timedelta = duration
 
         self.multiple: bool = multiple
@@ -359,6 +389,15 @@ class Poll:
         # The message's poll contains the more up to date data.
         self._expiry = message.poll.expires_at
         self._finalized = message.poll._finalized
+
+        new_answers: Dict[int, PollAnswer] = {}
+
+        for answer_id, answer in self._answers.items():
+            answer._update(answer_id, message.poll)
+            new_answers[answer_id] = answer
+
+        self._answers = new_answers
+        del new_answers
 
     def _update_results(self, data: PollResultPayload) -> None:
         self._finalized = data['is_finalized']
@@ -397,12 +436,13 @@ class Poll:
             layout_type=layout_type,
             question=question,
         )
-        self._answers = {
-            int(answer['answer_id']): PollAnswer(data=answer, message=message, poll=self) for answer in data['answers']
-        }
         self._message = message
         self._state = state
         self._expiry = expiry
+        self._answers = {
+            int(answer['answer_id']): PollAnswer.from_data(data=answer, poll=self)
+            for answer in data['answers']
+        }
 
         try:
             self._update_results(data['results'])
@@ -454,7 +494,7 @@ class Poll:
         """
 
         if not self._message:
-            return
+            return None
         return self._message.created_at
 
     @property
@@ -465,7 +505,7 @@ class Poll:
     @property
     def total_votes(self) -> int:
         """:class:`int`: Returns the sum of all the answer votes."""
-        return sum([answer.vote_count for answer in self.answers])
+        return sum(answer.vote_count for answer in self.answers)
 
     def is_finalised(self) -> bool:
         """:class:`bool`: Returns whether the poll has finalised.
@@ -496,26 +536,47 @@ class Poll:
 
         return new
 
+    @overload
+    def add_answer(
+        self,
+        answer: PollAnswer,
+    ) -> Self:
+        ...
+
+    @overload
     def add_answer(
         self,
         *,
         text: str,
         emoji: Optional[Union[PartialEmoji, Emoji, str]] = None,
     ) -> Self:
+        ...
+
+    def add_answer(
+        self,
+        answer: PollAnswer = MISSING,
+        *,
+        text: str = MISSING,
+        emoji: Optional[Union[PartialEmoji, Emoji, str]] = None,
+    ) -> Self:
         """Appends a new answer to this poll.
 
         Parameters
         ----------
+        answer: :class:`PollAnswer`
+            The answer to append. Can't be combined with ``text``.
         text: :class:`str`
             The text label for this poll answer. Can be up to 55
-            characters.
+            characters. Can't be combined with ``answer``.
         emoji: Union[:class:`PartialEmoji`, :class:`Emoji`, :class:`str`]
-            The emoji to display along the text.
+            The emoji to display along the text. Must be combined with ``emoji``.
 
         Raises
         ------
         ClientException
             Cannot append answers to a poll that is active.
+        ValueError
+            You combined both ``answer`` and ``text``.
 
         Returns
         -------
@@ -526,7 +587,18 @@ class Poll:
         if self._message:
             raise ClientException('Cannot append answers to a poll that is active')
 
-        answer = PollAnswer.from_params(id=len(self.answers) + 1, text=text, emoji=emoji, message=self._message, poll=self)
+        if answer is not MISSING:
+            if text is not MISSING:
+                raise ValueError(
+                    'Can\'t combine "answer" with "text"',
+                )
+
+            answer.id = len(self.answers) + 1
+            self._answers[answer.id] = answer
+            return self
+
+        answer = PollAnswer(text=text, emoji=emoji)
+        answer._update(len(self.answers) + 1, self)
         self._answers[answer.id] = answer
         return self
 

@@ -89,6 +89,7 @@ if TYPE_CHECKING:
     from .types.user import User as UserPayload
     from .types.embed import Embed as EmbedPayload
     from .types.gateway import MessageReactionRemoveEvent, MessageUpdateEvent
+    from .types.poll import Poll as PollPayload
     from .abc import Snowflake
     from .abc import GuildChannel, MessageableChannel
     from .components import ActionRow, ActionRowChildComponentType
@@ -2111,6 +2112,9 @@ class Message(PartialMessage, Hashable):
     def _handle_interaction_metadata(self, data: MessageInteractionMetadataPayload):
         self.interaction_metadata = MessageInteractionMetadata(state=self._state, guild=self.guild, data=data)
 
+    def _handle_poll(self, data: PollPayload):
+        self.poll = Poll._from_data(data=data, message=self, state=self._state)
+
     def _rebind_cached_references(
         self,
         new_guild: Guild,
@@ -2620,3 +2624,10 @@ class Message(PartialMessage, Hashable):
             The newly edited message.
         """
         return await self.edit(attachments=[a for a in self.attachments if a not in attachments])
+
+    async def end_poll(self) -> Message:
+        # We override this as this is a full message object, and we can just call _update
+        # to update with the recieved data.
+        data = await self._state.http.end_poll(self.channel.id, self.id)
+        self._update(data)
+        return self
