@@ -5117,14 +5117,6 @@ PartialWebhookChannel
 .. autoclass:: PartialWebhookChannel()
     :members:
 
-PollAnswer
-~~~~~~~~~~
-
-.. attributetable:: PollAnswer
-
-.. autoclass:: PollAnswer()
-    :members:
-
 .. _discord_api_data:
 
 Data Classes
@@ -5396,6 +5388,14 @@ Poll
 .. attributetable:: Poll
 
 .. autoclass:: Poll
+    :members:
+
+PollAnswer
+~~~~~~~~~~
+
+.. attributetable:: PollAnswer
+
+.. autoclass:: PollAnswer
     :members:
 
 PollMedia
