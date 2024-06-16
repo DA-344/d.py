@@ -98,10 +98,6 @@ GuildFeature = Literal[
     'WELCOME_SCREEN_ENABLED',
     'RAID_ALERTS_DISABLED',
 ]
-MemberVerificationFieldType = Literal[
-    'PARAGRAPH',
-    'MULTIPLE_CHOICE',
-]
 
 
 class _BaseGuildPreview(UnavailableGuild):
@@ -202,20 +198,3 @@ class RolePositionUpdate(_RolePositionRequired, total=False):
 class BulkBanUserResponse(TypedDict):
     banned_users: Optional[List[Snowflake]]
     failed_users: Optional[List[Snowflake]]
-
-
-class MemberVerificationField(TypedDict):
-    field_type: MemberVerificationFieldType
-    label: str
-    description: Optional[str]
-    automations: Optional[List]
-    required: bool
-    placeholder: NotRequired[str]
-    choices: NotRequired[List[str]]
-
-
-class MemberVerification(TypedDict):
-    version: str
-    form_fields: List[MemberVerificationField]
-    description: Optional[str]
-    guild: NotRequired[GuildPreview]
