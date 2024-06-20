@@ -307,7 +307,7 @@ class Poll:
     question: Union[:class:`PollMedia`, :class:`str`]
         The poll's displayed question. The text can be up to 300 characters.
     duration: :class:`datetime.timedelta`
-        The duration of the poll. Duration must be in hours.
+        The duration of the poll. Must be in hours.
     multiple: :class:`bool`
         Whether users are allowed to select more than one answer.
         Defaults to ``False``.
