@@ -38,14 +38,14 @@ if TYPE_CHECKING:
     from ..interactions import Interaction
     from ..components import Component
     from ..enums import ComponentType
-    from .view import View
+    from .view import BaseView
 
-    V = TypeVar('V', bound='View', covariant=True, default=View)
+    V = TypeVar('V', bound='BaseView', covariant=True, default=BaseView)
 else:
-    V = TypeVar('V', bound='View', covariant=True)
+    V = TypeVar('V', bound='BaseView', covariant=True)
 
 
-class DynamicItem(Generic[BaseT], Item['View']):
+class DynamicItem(Generic[BaseT], Item['BaseView']):
     """Represents an item with a dynamic ``custom_id`` that can be used to store state within
     that ``custom_id``.
 
@@ -144,7 +144,7 @@ class DynamicItem(Generic[BaseT], Item['View']):
     @property
     def custom_id(self) -> str:
         """:class:`str`: The ID of the dynamic item that gets received during an interaction."""
-        return self.item.custom_id  # type: ignore  # This attribute exists for dispatchable items
+        return self.item.custom_id
 
     @custom_id.setter
     def custom_id(self, value: str) -> None:
@@ -154,7 +154,7 @@ class DynamicItem(Generic[BaseT], Item['View']):
         if not self.template.match(value):
             raise ValueError(f'custom_id must match the template {self.template.pattern!r}')
 
-        self.item.custom_id = value  # type: ignore  # This attribute exists for dispatchable items
+        self.item.custom_id = value
         self._provided_custom_id = True
 
     @property
@@ -208,3 +208,9 @@ class DynamicItem(Generic[BaseT], Item['View']):
             from the ``match`` object.
         """
         raise NotImplementedError
+
+    async def callback(self, interaction: Interaction[ClientT]) -> Any:
+        return await self.item.callback(interaction)
+
+    async def interaction_check(self, interaction: Interaction[ClientT], /) -> bool:
+        return await self.item.interaction_check(interaction)

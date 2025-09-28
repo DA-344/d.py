@@ -31,20 +31,22 @@ from .sku import Entitlement
 from .voice import GuildVoiceState
 from .integration import BaseIntegration, IntegrationApplication
 from .role import Role
-from .channel import ChannelType, StageInstance
+from .channel import ChannelType, StageInstance, VoiceChannelEffect
 from .interactions import Interaction
 from .invite import InviteTargetType
 from .emoji import Emoji, PartialEmoji
 from .member import MemberWithUser
 from .snowflake import Snowflake
-from .message import Message
+from .message import Message, ReactionType
 from .sticker import GuildSticker
 from .appinfo import GatewayAppInfo, PartialAppInfo
 from .guild import Guild, UnavailableGuild
-from .user import User
+from .user import User, AvatarDecorationData
 from .threads import Thread, ThreadMember
 from .scheduled_event import GuildScheduledEvent
 from .audit_log import AuditLogEntry
+from .soundboard import SoundboardSound
+from .subscription import Subscription
 
 
 class SessionStartLimit(TypedDict):
@@ -90,8 +92,7 @@ class MessageDeleteBulkEvent(TypedDict):
     guild_id: NotRequired[Snowflake]
 
 
-class MessageUpdateEvent(Message):
-    channel_id: Snowflake
+MessageUpdateEvent = MessageCreateEvent
 
 
 class MessageReactionAddEvent(TypedDict):
@@ -104,6 +105,7 @@ class MessageReactionAddEvent(TypedDict):
     message_author_id: NotRequired[Snowflake]
     burst: bool
     burst_colors: NotRequired[List[str]]
+    type: ReactionType
 
 
 class MessageReactionRemoveEvent(TypedDict):
@@ -113,6 +115,7 @@ class MessageReactionRemoveEvent(TypedDict):
     emoji: PartialEmoji
     guild_id: NotRequired[Snowflake]
     burst: bool
+    type: ReactionType
 
 
 class MessageReactionRemoveAllEvent(TypedDict):
@@ -228,6 +231,7 @@ class GuildMemberUpdateEvent(TypedDict):
     mute: NotRequired[bool]
     pending: NotRequired[bool]
     communication_disabled_until: NotRequired[str]
+    avatar_decoration_data: NotRequired[AvatarDecorationData]
 
 
 class GuildEmojisUpdateEvent(TypedDict):
@@ -316,6 +320,19 @@ class _GuildScheduledEventUsersEvent(TypedDict):
 GuildScheduledEventUserAdd = GuildScheduledEventUserRemove = _GuildScheduledEventUsersEvent
 
 VoiceStateUpdateEvent = GuildVoiceState
+VoiceChannelEffectSendEvent = VoiceChannelEffect
+
+GuildSoundBoardSoundCreateEvent = GuildSoundBoardSoundUpdateEvent = SoundboardSound
+
+
+class GuildSoundBoardSoundsUpdateEvent(TypedDict):
+    guild_id: Snowflake
+    soundboard_sounds: List[SoundboardSound]
+
+
+class GuildSoundBoardSoundDeleteEvent(TypedDict):
+    sound_id: Snowflake
+    guild_id: Snowflake
 
 
 class VoiceServerUpdateEvent(TypedDict):
@@ -351,3 +368,14 @@ class GuildAuditLogEntryCreate(AuditLogEntry):
 
 
 EntitlementCreateEvent = EntitlementUpdateEvent = EntitlementDeleteEvent = Entitlement
+
+
+class PollVoteActionEvent(TypedDict):
+    user_id: Snowflake
+    channel_id: Snowflake
+    message_id: Snowflake
+    guild_id: NotRequired[Snowflake]
+    answer_id: int
+
+
+SubscriptionCreateEvent = SubscriptionUpdateEvent = SubscriptionDeleteEvent = Subscription

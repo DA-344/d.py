@@ -38,7 +38,7 @@ import aiohttp
 from .. import utils
 from ..errors import HTTPException, Forbidden, NotFound, DiscordServerError
 from ..message import Message
-from ..enums import try_enum, WebhookType, ChannelType
+from ..enums import try_enum, WebhookType, ChannelType, DefaultAvatar
 from ..user import BaseUser, User
 from ..flags import MessageFlags
 from ..asset import Asset
@@ -71,7 +71,8 @@ if TYPE_CHECKING:
     from ..emoji import Emoji
     from ..channel import VoiceChannel
     from ..abc import Snowflake
-    from ..ui.view import View
+    from ..ui.view import BaseView, View, LayoutView
+    from ..poll import Poll
     import datetime
     from ..types.webhook import (
         Webhook as WebhookPayload,
@@ -89,6 +90,9 @@ if TYPE_CHECKING:
     )
     from ..types.emoji import PartialEmoji as PartialEmojiPayload
     from ..types.snowflake import SnowflakeList
+    from ..types.interactions import (
+        InteractionCallback as InteractionCallbackResponsePayload,
+    )
 
     BE = TypeVar('BE', bound=BaseException)
     _State = Union[ConnectionState, '_WebhookState']
@@ -309,8 +313,9 @@ class AsyncWebhookAdapter:
         files: Optional[Sequence[File]] = None,
         thread_id: Optional[int] = None,
         wait: bool = False,
+        with_components: bool = False,
     ) -> Response[Optional[MessagePayload]]:
-        params = {'wait': int(wait)}
+        params = {'wait': int(wait), 'with_components': int(with_components)}
         if thread_id:
             params['thread_id'] = thread_id
         route = Route('POST', '/webhooks/{webhook_id}/{webhook_token}', webhook_id=webhook_id, webhook_token=token)
@@ -359,7 +364,7 @@ class AsyncWebhookAdapter:
         multipart: Optional[List[Dict[str, Any]]] = None,
         files: Optional[Sequence[File]] = None,
         thread_id: Optional[int] = None,
-    ) -> Response[Message]:
+    ) -> Response[MessagePayload]:
         route = Route(
             'PATCH',
             '/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}',
@@ -433,13 +438,14 @@ class AsyncWebhookAdapter:
         proxy: Optional[str] = None,
         proxy_auth: Optional[aiohttp.BasicAuth] = None,
         params: MultipartParameters,
-    ) -> Response[None]:
+    ) -> Response[InteractionCallbackResponsePayload]:
         route = Route(
             'POST',
             '/interactions/{webhook_id}/{webhook_token}/callback',
             webhook_id=interaction_id,
             webhook_token=token,
         )
+        request_params = {'with_response': '1'}
 
         if params.files:
             return self.request(
@@ -449,9 +455,17 @@ class AsyncWebhookAdapter:
                 proxy_auth=proxy_auth,
                 files=params.files,
                 multipart=params.multipart,
+                params=request_params,
             )
         else:
-            return self.request(route, session=session, proxy=proxy, proxy_auth=proxy_auth, payload=params.payload)
+            return self.request(
+                route,
+                session=session,
+                proxy=proxy,
+                proxy_auth=proxy_auth,
+                payload=params.payload,
+                params=request_params,
+            )
 
     def get_original_interaction_response(
         self,
@@ -538,9 +552,10 @@ def interaction_message_response_params(
     embed: Optional[Embed] = MISSING,
     embeds: Sequence[Embed] = MISSING,
     attachments: Sequence[Union[Attachment, File]] = MISSING,
-    view: Optional[View] = MISSING,
+    view: Optional[BaseView] = MISSING,
     allowed_mentions: Optional[AllowedMentions] = MISSING,
     previous_allowed_mentions: Optional[AllowedMentions] = None,
+    poll: Poll = MISSING,
 ) -> MultipartParameters:
     if files is not MISSING and file is not MISSING:
         raise TypeError('Cannot mix file and files keyword arguments.')
@@ -577,6 +592,13 @@ def interaction_message_response_params(
     if view is not MISSING:
         if view is not None:
             data['components'] = view.to_components()
+
+            if view.has_components_v2():
+                if flags is not MISSING:
+                    flags.components_v2 = True
+                else:
+                    flags = MessageFlags(components_v2=True)
+
         else:
             data['components'] = []
 
@@ -607,6 +629,9 @@ def interaction_message_response_params(
                 attachments_payload.append(attachment.to_dict())
 
         data['attachments'] = attachments_payload
+
+    if poll is not MISSING:
+        data['poll'] = poll._to_dict()
 
     multipart = []
     if files:
@@ -654,6 +679,11 @@ class PartialWebhookChannel(Hashable):
 
     def __repr__(self) -> str:
         return f'<PartialWebhookChannel name={self.name!r} id={self.id}>'
+
+    @property
+    def mention(self) -> str:
+        """:class:`str`: The string that allows you to mention the channel that the webhook is following."""
+        return f'<#{self.id}>'
 
 
 class PartialWebhookGuild(Hashable):
@@ -779,7 +809,7 @@ class WebhookMessage(Message):
         embeds: Sequence[Embed] = MISSING,
         embed: Optional[Embed] = MISSING,
         attachments: Sequence[Union[Attachment, File]] = MISSING,
-        view: Optional[View] = MISSING,
+        view: Optional[BaseView] = MISSING,
         allowed_mentions: Optional[AllowedMentions] = None,
     ) -> WebhookMessage:
         """|coro|
@@ -1039,12 +1069,11 @@ class BaseWebhook(Hashable):
     @property
     def default_avatar(self) -> Asset:
         """
-        :class:`Asset`: Returns the default avatar. This is always the blurple avatar.
+        :class:`Asset`: Returns the default avatar.
 
         .. versionadded:: 2.0
         """
-        # Default is always blurple apparently
-        return Asset._from_default_avatar(self._state, 0)
+        return Asset._from_default_avatar(self._state, (self.id >> 22) % len(DefaultAvatar))
 
     @property
     def display_avatar(self) -> Asset:
@@ -1155,7 +1184,7 @@ class Webhook(BaseWebhook):
         self.proxy_auth: Optional[aiohttp.BasicAuth] = proxy_auth
 
     def __repr__(self) -> str:
-        return f'<Webhook id={self.id!r}>'
+        return f'<Webhook id={self.id!r} type={self.type!r} name={self.name!r}>'
 
     @property
     def url(self) -> str:
@@ -1305,9 +1334,10 @@ class Webhook(BaseWebhook):
             'user': {
                 'username': user.name,
                 'discriminator': user.discriminator,
-                'global_name': user.global_name,
                 'id': user.id,
                 'avatar': user._avatar,
+                'avatar_decoration_data': user._avatar_decoration_data,
+                'global_name': user.global_name,
             },
         }
 
@@ -1578,6 +1608,46 @@ class Webhook(BaseWebhook):
     @overload
     async def send(
         self,
+        *,
+        username: str = MISSING,
+        avatar_url: Any = MISSING,
+        ephemeral: bool = MISSING,
+        file: File = MISSING,
+        files: Sequence[File] = MISSING,
+        allowed_mentions: AllowedMentions = MISSING,
+        view: LayoutView,
+        wait: Literal[True],
+        thread: Snowflake = MISSING,
+        thread_name: str = MISSING,
+        suppress_embeds: bool = MISSING,
+        silent: bool = MISSING,
+        applied_tags: List[ForumTag] = MISSING,
+    ) -> WebhookMessage:
+        ...
+
+    @overload
+    async def send(
+        self,
+        *,
+        username: str = MISSING,
+        avatar_url: Any = MISSING,
+        ephemeral: bool = MISSING,
+        file: File = MISSING,
+        files: Sequence[File] = MISSING,
+        allowed_mentions: AllowedMentions = MISSING,
+        view: LayoutView,
+        wait: Literal[False] = ...,
+        thread: Snowflake = MISSING,
+        thread_name: str = MISSING,
+        suppress_embeds: bool = MISSING,
+        silent: bool = MISSING,
+        applied_tags: List[ForumTag] = MISSING,
+    ) -> None:
+        ...
+
+    @overload
+    async def send(
+        self,
         content: str = MISSING,
         *,
         username: str = MISSING,
@@ -1595,6 +1665,8 @@ class Webhook(BaseWebhook):
         wait: Literal[True],
         suppress_embeds: bool = MISSING,
         silent: bool = MISSING,
+        applied_tags: List[ForumTag] = MISSING,
+        poll: Poll = MISSING,
     ) -> WebhookMessage:
         ...
 
@@ -1618,6 +1690,8 @@ class Webhook(BaseWebhook):
         wait: Literal[False] = ...,
         suppress_embeds: bool = MISSING,
         silent: bool = MISSING,
+        applied_tags: List[ForumTag] = MISSING,
+        poll: Poll = MISSING,
     ) -> None:
         ...
 
@@ -1634,13 +1708,14 @@ class Webhook(BaseWebhook):
         embed: Embed = MISSING,
         embeds: Sequence[Embed] = MISSING,
         allowed_mentions: AllowedMentions = MISSING,
-        view: View = MISSING,
+        view: BaseView = MISSING,
         thread: Snowflake = MISSING,
         thread_name: str = MISSING,
         wait: bool = False,
         suppress_embeds: bool = False,
         silent: bool = False,
         applied_tags: List[ForumTag] = MISSING,
+        poll: Poll = MISSING,
     ) -> Optional[WebhookMessage]:
         """|coro|
 
@@ -1699,13 +1774,14 @@ class Webhook(BaseWebhook):
             Controls the mentions being processed in this message.
 
             .. versionadded:: 1.4
-        view: :class:`discord.ui.View`
-            The view to send with the message. You can only send a view
-            if this webhook is not partial and has state attached. A
-            webhook has state attached if the webhook is managed by the
-            library.
+        view: Union[:class:`discord.ui.View`, :class:`discord.ui.LayoutView`]
+            The view to send with the message. If the webhook is partial or
+            is not managed by the library, then you can only send URL buttons.
+            Otherwise, you can send views with any type of components.
 
             .. versionadded:: 2.0
+            .. versionchanged:: 2.6
+                This now accepts :class:`discord.ui.LayoutView` instances.
         thread: :class:`~discord.abc.Snowflake`
             The thread to send this webhook to.
 
@@ -1731,6 +1807,15 @@ class Webhook(BaseWebhook):
 
             .. versionadded:: 2.4
 
+        poll: :class:`Poll`
+            The poll to send with this message.
+
+            .. warning::
+
+                When sending a Poll via webhook, you cannot manually end it.
+
+            .. versionadded:: 2.4
+
         Raises
         --------
         HTTPException
@@ -1746,7 +1831,8 @@ class Webhook(BaseWebhook):
             The length of ``embeds`` was invalid, there was no token
             associated with this webhook or ``ephemeral`` was passed
             with the improper webhook type or there was no state
-            attached with this webhook when giving it a view.
+            attached with this webhook when giving it a view that had
+            components other than URL buttons.
 
         Returns
         ---------
@@ -1776,13 +1862,15 @@ class Webhook(BaseWebhook):
             wait = True
 
         if view is not MISSING:
-            if isinstance(self._state, _WebhookState):
-                raise ValueError('Webhook views require an associated state with the webhook')
-
             if not hasattr(view, '__discord_ui_view__'):
                 raise TypeError(f'expected view parameter to be of type View not {view.__class__.__name__}')
 
-            if ephemeral is True and view.timeout is None:
+            if isinstance(self._state, _WebhookState) and view.is_dispatchable():
+                raise ValueError(
+                    'Webhook views with any component other than URL buttons require an associated state with the webhook'
+                )
+
+            if ephemeral is True and view.timeout is None and view.is_dispatchable():
                 view.timeout = 15 * 60.0
 
         if thread_name is not MISSING and thread is not MISSING:
@@ -1808,6 +1896,7 @@ class Webhook(BaseWebhook):
             allowed_mentions=allowed_mentions,
             previous_allowed_mentions=previous_mentions,
             applied_tags=applied_tag_ids,
+            poll=poll,
         ) as params:
             adapter = async_context.get()
             thread_id: Optional[int] = None
@@ -1825,6 +1914,7 @@ class Webhook(BaseWebhook):
                 files=params.files,
                 thread_id=thread_id,
                 wait=wait,
+                with_components=view is not MISSING,
             )
 
         msg = None
@@ -1834,6 +1924,9 @@ class Webhook(BaseWebhook):
         if view is not MISSING and not view.is_finished():
             message_id = None if msg is None else msg.id
             self._state.store_view(view, message_id)
+
+        if poll is not MISSING and msg:
+            poll._update(msg)
 
         return msg
 
@@ -1887,6 +1980,33 @@ class Webhook(BaseWebhook):
         )
         return self._create_message(data, thread=thread)
 
+    @overload
+    async def edit_message(
+        self,
+        message_id: int,
+        *,
+        attachments: Sequence[Union[Attachment, File]] = ...,
+        view: LayoutView,
+        allowed_mentions: Optional[AllowedMentions] = ...,
+        thread: Snowflake = ...,
+    ) -> WebhookMessage:
+        ...
+
+    @overload
+    async def edit_message(
+        self,
+        message_id: int,
+        *,
+        content: Optional[str] = ...,
+        embeds: Sequence[Embed] = ...,
+        embed: Optional[Embed] = ...,
+        attachments: Sequence[Union[Attachment, File]] = ...,
+        view: Optional[View] = ...,
+        allowed_mentions: Optional[AllowedMentions] = ...,
+        thread: Snowflake = ...,
+    ) -> WebhookMessage:
+        ...
+
     async def edit_message(
         self,
         message_id: int,
@@ -1895,7 +2015,7 @@ class Webhook(BaseWebhook):
         embeds: Sequence[Embed] = MISSING,
         embed: Optional[Embed] = MISSING,
         attachments: Sequence[Union[Attachment, File]] = MISSING,
-        view: Optional[View] = MISSING,
+        view: Optional[BaseView] = MISSING,
         allowed_mentions: Optional[AllowedMentions] = None,
         thread: Snowflake = MISSING,
     ) -> WebhookMessage:
@@ -1934,12 +2054,14 @@ class Webhook(BaseWebhook):
         allowed_mentions: :class:`AllowedMentions`
             Controls the mentions being processed in this message.
             See :meth:`.abc.Messageable.send` for more information.
-        view: Optional[:class:`~discord.ui.View`]
+        view: Optional[Union[:class:`~discord.ui.View`, :class:`~discord.ui.LayoutView`]]
             The updated view to update this message with. If ``None`` is passed then
             the view is removed. The webhook must have state attached, similar to
             :meth:`send`.
 
             .. versionadded:: 2.0
+            .. versionchanged:: 2.6
+                This now accepts :class:`~discord.ui.LayoutView` instances.
         thread: :class:`~discord.abc.Snowflake`
             The thread the webhook message belongs to.
 

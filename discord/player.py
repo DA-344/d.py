@@ -288,6 +288,12 @@ class FFmpegPCMAudio(FFmpegAudio):
         passed to the stdin of ffmpeg.
     executable: :class:`str`
         The executable name (and path) to use. Defaults to ``ffmpeg``.
+
+        .. warning::
+
+            Since this class spawns a subprocess, care should be taken to not
+            pass in an arbitrary executable name when using this parameter.
+
     pipe: :class:`bool`
         If ``True``, denotes that ``source`` parameter will be passed
         to the stdin of ffmpeg. Defaults to ``False``.
@@ -392,6 +398,12 @@ class FFmpegOpusAudio(FFmpegAudio):
 
     executable: :class:`str`
         The executable name (and path) to use. Defaults to ``ffmpeg``.
+
+        .. warning::
+
+            Since this class spawns a subprocess, care should be taken to not
+            pass in an arbitrary executable name when using this parameter.
+
     pipe: :class:`bool`
         If ``True``, denotes that ``source`` parameter will be passed
         to the stdin of ffmpeg. Defaults to ``False``.
@@ -576,22 +588,26 @@ class FFmpegOpusAudio(FFmpegAudio):
         loop = asyncio.get_running_loop()
         try:
             codec, bitrate = await loop.run_in_executor(None, lambda: probefunc(source, executable))
-        except Exception:
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
             if not fallback:
                 _log.exception("Probe '%s' using '%s' failed", method, executable)
-                return  # type: ignore
+                return None, None
 
             _log.exception("Probe '%s' using '%s' failed, trying fallback", method, executable)
             try:
                 codec, bitrate = await loop.run_in_executor(None, lambda: fallback(source, executable))
-            except Exception:
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except BaseException:
                 _log.exception("Fallback probe using '%s' failed", executable)
             else:
                 _log.debug("Fallback probe found codec=%s, bitrate=%s", codec, bitrate)
         else:
             _log.debug("Probe found codec=%s, bitrate=%s", codec, bitrate)
-        finally:
-            return codec, bitrate
+
+        return codec, bitrate
 
     @staticmethod
     def _probe_codec_native(source, executable: str = 'ffmpeg') -> Tuple[Optional[str], Optional[int]]:
@@ -751,7 +767,8 @@ class AudioPlayer(threading.Thread):
             delay = max(0, self.DELAY + (next_time - time.perf_counter()))
             time.sleep(delay)
 
-        self.send_silence()
+        if client.is_connected():
+            self.send_silence()
 
     def run(self) -> None:
         try:

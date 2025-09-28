@@ -235,6 +235,10 @@ def _transform_automod_actions(entry: AuditLogEntry, data: List[AutoModerationAc
     return [AutoModRuleAction.from_data(action) for action in data]
 
 
+def _transform_default_emoji(entry: AuditLogEntry, data: str) -> PartialEmoji:
+    return PartialEmoji(name=data)
+
+
 E = TypeVar('E', bound=enums.Enum)
 
 
@@ -341,6 +345,8 @@ class AuditLogChanges:
         'available_tags':                        (None, _transform_forum_tags),
         'flags':                                 (None, _transform_overloaded_flags),
         'default_reaction_emoji':                (None, _transform_default_reaction),
+        'emoji_name':                            ('emoji', _transform_default_emoji),
+        'user_id':                               ('user', _transform_member_id)
     }
     # fmt: on
 
@@ -868,7 +874,13 @@ class AuditLogEntry(Hashable):
     def _convert_target_emoji(self, target_id: int) -> Union[Emoji, Object]:
         return self._state.get_emoji(target_id) or Object(id=target_id, type=Emoji)
 
-    def _convert_target_message(self, target_id: int) -> Union[Member, User, Object]:
+    def _convert_target_message(self, target_id: Optional[int]) -> Optional[Union[Member, User, Object]]:
+        # The message_pin and message_unpin action types do not have a
+        # non-null target_id so safeguard against that
+
+        if target_id is None:
+            return None
+
         return self._get_member(target_id) or Object(id=target_id, type=Member)
 
     def _convert_target_stage_instance(self, target_id: int) -> Union[StageInstance, Object]:

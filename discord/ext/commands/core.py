@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import datetime
 import functools
 import inspect
@@ -42,6 +43,8 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    get_args,
+    get_origin,
     overload,
 )
 import re
@@ -292,6 +295,11 @@ class _AttachmentIterator:
     def is_empty(self) -> bool:
         return self.index >= len(self.data)
 
+@dataclass
+class CommandArgument:
+    name: str
+    optional: bool
+
 
 class Command(_BaseCommand, Generic[CogT, P, T]):
     r"""A class that implements the protocol for a bot text command.
@@ -461,7 +469,7 @@ class Command(_BaseCommand, Generic[CogT, P, T]):
 
         # bandaid for the fact that sometimes parent can be the bot instance
         parent: Optional[GroupMixin[Any]] = kwargs.get('parent')
-        self.parent: Optional[GroupMixin[Any]] = parent if isinstance(parent, _BaseCommand) else None  # type: ignore # Does not recognise mixin usage
+        self.parent: Optional[GroupMixin[Any]] = parent if isinstance(parent, _BaseCommand) else None
 
         self._before_invoke: Optional[Hook] = None
         try:
@@ -512,6 +520,37 @@ class Command(_BaseCommand, Generic[CogT, P, T]):
 
         self.params: Dict[str, Parameter] = get_signature_parameters(function, globalns)
 
+    @discord.utils.cached_property
+    def arguments(self: Command) -> List[CommandArgument]:
+        def get_parameter_name(name: str, annotation: Optional[type]) -> str:
+            if annotation is not None and get_origin(annotation) is Literal:
+                literal_values = get_args(annotation)
+                if len(literal_values) > 1:
+                    return ', '.join([f"'{value}'" for value in literal_values[:-1]]) + f" or '{literal_values[-1]}'"
+                else:
+                    return f'`{literal_values[0]}`'  # type: ignore
+            return name.replace('_', ' ')
+        
+        return [
+            CommandArgument(
+                name=get_parameter_name(name, param.annotation),
+                optional=(get_origin(param.annotation) is Union and type(None) in get_args(param.annotation)),
+            )
+            for name, param in list(inspect.signature(self.callback).parameters.items())[2:]
+        ]
+        
+    @discord.utils.cached_property
+    def permissions(self) -> List[str]:
+        return [
+            perm
+            for check in self.checks
+            if getattr(check, '__closure__', None)
+            for cell in check.__closure__ # type: ignore
+            if isinstance(cell.cell_contents, dict)
+            for perm, val in cell.cell_contents.items()
+            if val
+        ] or ['N/A']
+        
     def add_check(self, func: UserCheck[Context[Any]], /) -> None:
         """Adds a check to the command.
 
@@ -776,7 +815,7 @@ class Command(_BaseCommand, Generic[CogT, P, T]):
         command = self
         # command.parent is type-hinted as GroupMixin some attributes are resolved via MRO
         while command.parent is not None:  # type: ignore
-            command = command.parent
+            command = command.parent  # type: ignore
             entries.append(command.name)  # type: ignore
 
         return ' '.join(reversed(entries))
@@ -794,7 +833,7 @@ class Command(_BaseCommand, Generic[CogT, P, T]):
         entries = []
         command = self
         while command.parent is not None:  # type: ignore
-            command = command.parent
+            command = command.parent  # type: ignore
             entries.append(command)
 
         return entries
@@ -1285,7 +1324,7 @@ class Command(_BaseCommand, Generic[CogT, P, T]):
                 # since we have no checks, then we just return True.
                 return True
 
-            return await discord.utils.async_all(predicate(ctx) for predicate in predicates)
+            return await discord.utils.async_all(predicate(ctx) for predicate in predicates)  # type: ignore
         finally:
             ctx.command = original
 

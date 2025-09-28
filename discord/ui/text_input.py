@@ -65,27 +65,37 @@ class TextInput(Item[V]):
     ------------
     label: :class:`str`
         The label to display above the text input.
+        Can only be up to 45 characters.
     custom_id: :class:`str`
         The ID of the text input that gets received during an interaction.
         If not given then one is generated for you.
+        Can only be up to 100 characters.
     style: :class:`discord.TextStyle`
         The style of the text input.
     placeholder: Optional[:class:`str`]
         The placeholder text to display when the text input is empty.
+        Can only be up to 100 characters.
     default: Optional[:class:`str`]
         The default value of the text input.
+        Can only be up to 4000 characters.
     required: :class:`bool`
         Whether the text input is required.
     min_length: Optional[:class:`int`]
         The minimum length of the text input.
+        Must be between 0 and 4000.
     max_length: Optional[:class:`int`]
         The maximum length of the text input.
+        Must be between 1 and 4000.
     row: Optional[:class:`int`]
         The relative row this text input belongs to. A Discord component can only have 5
         rows. By default, items are arranged automatically into those 5 rows. If you'd
         like to control the relative positioning of the row then passing an index is advised.
         For example, row=1 will show up before row=2. Defaults to ``None``, which is automatic
         ordering. The row number must be between 0 and 4 (i.e. zero indexed).
+    id: Optional[:class:`int`]
+        The ID of the component. This must be unique across the view.
+
+        .. versionadded:: 2.6
     """
 
     __item_repr_attributes__: Tuple[str, ...] = (
@@ -106,6 +116,7 @@ class TextInput(Item[V]):
         min_length: Optional[int] = None,
         max_length: Optional[int] = None,
         row: Optional[int] = None,
+        id: Optional[int] = None,
     ) -> None:
         super().__init__()
         self._value: Optional[str] = default
@@ -123,8 +134,10 @@ class TextInput(Item[V]):
             required=required,
             min_length=min_length,
             max_length=max_length,
+            id=id,
         )
         self.row = row
+        self.id = id
 
     def __str__(self) -> str:
         return self.value
@@ -235,6 +248,7 @@ class TextInput(Item[V]):
             min_length=component.min_length,
             max_length=component.max_length,
             row=None,
+            id=component.id,
         )
 
     @property

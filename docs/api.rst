@@ -80,6 +80,14 @@ AppInstallParams
 .. autoclass:: AppInstallParams()
     :members:
 
+IntegrationTypeConfig
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: IntegrationTypeConfig
+
+.. autoclass:: IntegrationTypeConfig()
+    :members:
+
 Team
 ~~~~~
 
@@ -916,6 +924,29 @@ Members
     :param after: The updated member's updated info.
     :type after: :class:`Member`
 
+.. function:: on_raw_presence_update(payload)
+
+    Called when a :class:`Member` updates their presence.
+    
+    This requires :attr:`Intents.presences` to be enabled.
+
+    Unlike :func:`on_presence_update`, when enabled, this is called regardless of the state of internal guild 
+    and member caches, and **does not** provide a comparison between the previous and updated states of the :class:`Member`.
+
+    .. important::
+
+        By default, this event is only dispatched when :attr:`Intents.presences` is enabled **and** :attr:`Intents.members` 
+        is disabled.
+
+        You can manually override this behaviour by setting the **enable_raw_presences** flag in the :class:`Client`,
+        however :attr:`Intents.presences` is always required for this event to work.
+    
+    .. versionadded:: 2.5
+
+    :param payload: The raw presence update event model.
+    :type payload: :class:`RawPresenceUpdateEvent`
+        
+
 Messages
 ~~~~~~~~~
 
@@ -1008,7 +1039,7 @@ Messages
     will return a :class:`Message` object that represents the message before the content was modified.
 
     Due to the inherently raw nature of this event, the data parameter coincides with
-    the raw data given by the :ddocs:`gateway <topics/gateway#message-update>`.
+    the raw data given by the :ddocs:`gateway <topics/gateway-events#message-update>`.
 
     Since the data payload can be partial, care must be taken when accessing stuff in the dictionary.
     One example of a common case of partial data is when the ``'content'`` key is inaccessible. This
@@ -1046,6 +1077,47 @@ Messages
 
     :param payload: The raw event payload data.
     :type payload: :class:`RawBulkMessageDeleteEvent`
+
+Polls
+~~~~~~
+
+.. function:: on_poll_vote_add(user, answer)
+              on_poll_vote_remove(user, answer)
+
+    Called when a :class:`Poll` gains or loses a vote. If the ``user`` or ``answer``'s poll
+    parent message are not cached then this event will not be called.
+
+    This requires :attr:`Intents.message_content` and :attr:`Intents.polls` to be enabled.
+
+    .. note::
+
+        If the poll allows multiple answers and the user removes or adds multiple votes, this
+        event will be called as many times as votes that are added or removed.
+
+    .. versionadded:: 2.4
+
+    :param user: The user that performed the action.
+    :type user: Union[:class:`User`, :class:`Member`]
+    :param answer: The answer the user voted or removed their vote from.
+    :type answer: :class:`PollAnswer`
+
+.. function:: on_raw_poll_vote_add(payload)
+              on_raw_poll_vote_remove(payload)
+
+    Called when a :class:`Poll` gains or loses a vote. Unlike :func:`on_poll_vote_add` and :func:`on_poll_vote_remove`
+    this is called regardless of the state of the internal user and message cache.
+
+    This requires :attr:`Intents.message_content` and :attr:`Intents.polls` to be enabled.
+
+    .. note::
+
+        If the poll allows multiple answers and the user removes or adds multiple votes, this
+        event will be called as many times as votes that are added or removed.
+
+    .. versionadded:: 2.4
+
+    :param payload: The raw event payload data.
+    :type payload: :class:`RawPollVoteActionEvent`
 
 Reactions
 ~~~~~~~~~~
@@ -1257,6 +1329,35 @@ Scheduled Events
     :type user: :class:`User`
 
 
+Soundboard
+~~~~~~~~~~~
+
+.. function:: on_soundboard_sound_create(sound)
+              on_soundboard_sound_delete(sound)
+
+    Called when a :class:`SoundboardSound` is created or deleted.
+
+    .. versionadded:: 2.5
+
+    :param sound: The soundboard sound that was created or deleted.
+    :type sound: :class:`SoundboardSound`
+
+.. function:: on_soundboard_sound_update(before, after)
+
+    Called when a :class:`SoundboardSound` is updated.
+
+    The following examples illustrate when this event is called:
+
+    - The name is changed.
+    - The emoji is changed.
+    - The volume is changed.
+
+    .. versionadded:: 2.5
+
+    :param sound: The soundboard sound that was updated.
+    :type sound: :class:`SoundboardSound`
+
+
 Stages
 ~~~~~~~
 
@@ -1285,6 +1386,37 @@ Stages
     :type before: :class:`StageInstance`
     :param after: The stage instance after the update.
     :type after: :class:`StageInstance`
+
+
+Subscriptions
+~~~~~~~~~~~~~
+
+.. function:: on_subscription_create(subscription)
+
+    Called when a subscription is created.
+
+    .. versionadded:: 2.5
+
+    :param subscription: The subscription that was created.
+    :type subscription: :class:`Subscription`
+
+.. function:: on_subscription_update(subscription)
+
+    Called when a subscription is updated.
+
+    .. versionadded:: 2.5
+
+    :param subscription: The subscription that was updated.
+    :type subscription: :class:`Subscription`
+
+.. function:: on_subscription_delete(subscription)
+
+    Called when a subscription is deleted.
+
+    .. versionadded:: 2.5
+
+    :param subscription: The subscription that was deleted.
+    :type subscription: :class:`Subscription`
 
 Threads
 ~~~~~~~~
@@ -1441,6 +1573,17 @@ Voice
     :type before: :class:`VoiceState`
     :param after: The voice state after the changes.
     :type after: :class:`VoiceState`
+
+.. function:: on_voice_channel_effect(effect)
+
+    Called when a :class:`Member` sends a :class:`VoiceChannelEffect` in a voice channel the bot is in.
+
+    This requires :attr:`Intents.voice_states` to be enabled.
+
+    .. versionadded:: 2.5
+
+    :param effect: The effect that is sent.
+    :type effect: :class:`VoiceChannelEffect`
 
 .. _discord-api-utils:
 
@@ -1768,6 +1911,16 @@ of :class:`enum.Enum`.
         The system message sent when a false alarm is reported.
 
         .. versionadded:: 2.4
+
+    .. attribute:: purchase_notification
+
+        The system message sent when a purchase is made in the guild.
+
+        .. versionadded:: 2.5
+
+    .. attribute:: poll_result
+
+        The system message sent when a poll has closed.
 
 .. class:: UserFlags
 
@@ -2265,7 +2418,7 @@ of :class:`enum.Enum`.
         When this is the action, the type of :attr:`~AuditLogEntry.extra` is
         set to an unspecified proxy object with two attributes:
 
-        - ``channel``: A :class:`TextChannel` or :class:`Object` with the channel ID where the members were moved.
+        - ``channel``: An :class:`abc.Connectable` or :class:`Object` with the channel ID where the members were moved.
         - ``count``: An integer specifying how many members were moved.
 
         .. versionadded:: 1.3
@@ -2904,6 +3057,42 @@ of :class:`enum.Enum`.
 
         .. versionadded:: 2.4
 
+    .. attribute:: soundboard_sound_create
+
+        A soundboard sound was created.
+
+        Possible attributes for :class:`AuditLogDiff`:
+
+        - :attr:`~AuditLogDiff.name`
+        - :attr:`~AuditLogDiff.emoji`
+        - :attr:`~AuditLogDiff.volume`
+
+        .. versionadded:: 2.5
+
+    .. attribute:: soundboard_sound_update
+
+        A soundboard sound was updated.
+
+        Possible attributes for :class:`AuditLogDiff`:
+
+        - :attr:`~AuditLogDiff.name`
+        - :attr:`~AuditLogDiff.emoji`
+        - :attr:`~AuditLogDiff.volume`
+
+        .. versionadded:: 2.5
+
+    .. attribute:: soundboard_sound_delete
+
+        A soundboard sound was deleted.
+
+        Possible attributes for :class:`AuditLogDiff`:
+
+        - :attr:`~AuditLogDiff.name`
+        - :attr:`~AuditLogDiff.emoji`
+        - :attr:`~AuditLogDiff.volume`
+
+        .. versionadded:: 2.5
+
 .. class:: AuditLogActionCategory
 
     Represents the category that the :class:`AuditLogAction` belongs to.
@@ -3506,6 +3695,14 @@ of :class:`enum.Enum`.
 
     .. versionadded:: 2.4
 
+    .. attribute:: durable
+
+        The SKU is a durable one-time purchase.
+
+    .. attribute:: consumable
+
+        The SKU is a consumable one-time purchase.
+
     .. attribute:: subscription
 
         The SKU is a recurring subscription.
@@ -3520,6 +3717,34 @@ of :class:`enum.Enum`.
     Represents the type of an entitlement.
 
     .. versionadded:: 2.4
+
+    .. attribute:: purchase
+
+        The entitlement was purchased by the user.
+
+    .. attribute:: premium_subscription
+
+        The entitlement is for a nitro subscription.
+
+    .. attribute:: developer_gift
+
+        The entitlement was gifted by the developer.
+
+    .. attribute:: test_mode_purchase
+
+        The entitlement was purchased by a developer in application test mode.
+
+    .. attribute:: free_purchase
+
+        The entitlement was granted, when the SKU was free.
+
+    .. attribute:: user_gift
+
+        The entitlement was gifted by a another user.
+
+    .. attribute:: premium_purchase
+
+        The entitlement was claimed for free by a nitro subscriber.
 
     .. attribute:: application_subscription
 
@@ -3540,6 +3765,132 @@ of :class:`enum.Enum`.
 
             The entitlement owner is a user.
 
+
+.. class:: PollLayoutType
+
+    Represents how a poll answers are shown.
+
+    .. versionadded:: 2.4
+
+    .. attribute:: default
+
+        The default layout.
+
+
+.. class:: InviteType
+
+    Represents the type of an invite.
+
+    .. versionadded:: 2.4
+
+    .. attribute:: guild
+
+        The invite is a guild invite.
+
+    .. attribute:: group_dm
+
+        The invite is a group DM invite.
+
+    .. attribute:: friend
+
+        The invite is a friend invite.
+
+
+.. class:: ReactionType
+
+    Represents the type of a reaction.
+
+    .. versionadded:: 2.4
+
+    .. attribute:: normal
+
+        A normal reaction.
+
+    .. attribute:: burst
+
+        A burst reaction, also known as a "super reaction".
+
+
+.. class:: VoiceChannelEffectAnimationType
+
+    Represents the animation type of a voice channel effect.
+
+    .. versionadded:: 2.5
+
+    .. attribute:: premium
+
+        A fun animation, sent by a Nitro subscriber.
+
+    .. attribute:: basic
+
+        The standard animation.
+
+
+.. class:: SubscriptionStatus
+
+    Represents the status of an subscription.
+
+    .. versionadded:: 2.5
+
+    .. attribute:: active
+
+        The subscription is active.
+
+    .. attribute:: ending
+
+        The subscription is active but will not renew.
+
+    .. attribute:: inactive
+
+        The subscription is inactive and not being charged.
+
+
+.. class:: MessageReferenceType
+
+    Represents the type of a message reference.
+
+    .. versionadded:: 2.5
+
+    .. attribute:: default
+
+        A standard reference used by message replies (:attr:`MessageType.reply`),
+        crossposted messaged created by a followed channel integration, and messages of type:
+
+        - :attr:`MessageType.pins_add`
+        - :attr:`MessageType.channel_follow_add`
+        - :attr:`MessageType.thread_created`
+        - :attr:`MessageType.thread_starter_message`
+        - :attr:`MessageType.poll_result`
+        - :attr:`MessageType.context_menu_command`
+
+    .. attribute:: forward
+
+        A forwarded message.
+
+    .. attribute:: reply
+
+        An alias for :attr:`.default`.
+
+
+.. class:: MediaItemLoadingState
+
+    Represents a :class:`UnfurledMediaItem` load state.
+
+    .. attribute:: unknown
+
+        Unknown load state.
+
+    .. attribute:: loading
+
+        The media item is still loading.
+
+    .. attribute:: loaded
+
+        The media item is loaded.
+
+    .. attribute:: not_found
+
+        The media item was not found.
 
 .. _discord-api-audit-logs:
 
@@ -4006,11 +4357,12 @@ AuditLogDiff
 
     .. attribute:: emoji
 
-        The name of the emoji that represents a sticker being changed.
+        The emoji which represents one of the following:
 
-        See also :attr:`GuildSticker.emoji`.
+        * :attr:`GuildSticker.emoji`
+        * :attr:`SoundboardSound.emoji`
 
-        :type: :class:`str`
+        :type: Union[:class:`str`, :class:`PartialEmoji`]
 
     .. attribute:: unicode_emoji
 
@@ -4031,9 +4383,10 @@ AuditLogDiff
 
     .. attribute:: available
 
-        The availability of a sticker being changed.
+        The availability of one of the following being changed:
 
-        See also :attr:`GuildSticker.available`
+        * :attr:`GuildSticker.available`
+        * :attr:`SoundboardSound.available`
 
         :type: :class:`bool`
 
@@ -4255,6 +4608,22 @@ AuditLogDiff
         See also :attr:`ForumChannel.default_reaction_emoji`
 
         :type: Optional[:class:`PartialEmoji`]
+
+    .. attribute:: user
+
+        The user that represents the uploader of a soundboard sound.
+
+        See also :attr:`SoundboardSound.user`
+
+        :type: Union[:class:`Member`, :class:`User`]
+
+    .. attribute:: volume
+
+        The volume of a soundboard sound.
+
+        See also :attr:`SoundboardSound.volume`
+
+        :type: :class:`float`
 
 .. this is currently missing the following keys: reason and application_id
    I'm not sure how to port these
@@ -4491,6 +4860,32 @@ Guild
 
         :type: :class:`User`
 
+.. class:: BulkBanResult
+
+    A namedtuple which represents the result returned from :meth:`~Guild.bulk_ban`.
+
+    .. versionadded:: 2.4
+
+    .. attribute:: banned
+
+        The list of users that were banned. The inner :class:`Object` of the list
+        has the :attr:`Object.type` set to :class:`User`.
+
+        :type: List[:class:`Object`]
+    .. attribute:: failed
+
+        The list of users that could not be banned. The inner :class:`Object` of the list
+        has the :attr:`Object.type` set to :class:`User`.
+
+        :type: List[:class:`Object`]
+
+GuildPreview
+~~~~~~~~~~~~
+
+.. attributetable:: GuildPreview
+
+.. autoclass:: GuildPreview
+    :members:
 
 ScheduledEvent
 ~~~~~~~~~~~~~~
@@ -4655,6 +5050,35 @@ VoiceChannel
 .. attributetable:: VoiceChannel
 
 .. autoclass:: VoiceChannel()
+    :members:
+    :inherited-members:
+
+.. attributetable:: VoiceChannelEffect
+
+.. autoclass:: VoiceChannelEffect()
+    :members:
+    :inherited-members:
+
+.. class:: VoiceChannelEffectAnimation
+
+    A namedtuple which represents a voice channel effect animation.
+
+    .. versionadded:: 2.5
+
+    .. attribute:: id
+
+        The ID of the animation.
+
+        :type: :class:`int`
+    .. attribute:: type
+
+        The type of the animation.
+
+        :type: :class:`VoiceChannelEffectAnimationType`
+
+.. attributetable:: VoiceChannelSoundEffect
+
+.. autoclass:: VoiceChannelSoundEffect()
     :members:
     :inherited-members:
 
@@ -4824,12 +5248,44 @@ GuildSticker
 .. autoclass:: GuildSticker()
     :members:
 
+BaseSoundboardSound
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: BaseSoundboardSound
+
+.. autoclass:: BaseSoundboardSound()
+    :members:
+
+SoundboardDefaultSound
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: SoundboardDefaultSound
+
+.. autoclass:: SoundboardDefaultSound()
+    :members:
+
+SoundboardSound
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: SoundboardSound
+
+.. autoclass:: SoundboardSound()
+    :members:
+
 ShardInfo
 ~~~~~~~~~~~
 
 .. attributetable:: ShardInfo
 
 .. autoclass:: ShardInfo()
+    :members:
+
+SessionStartLimits
+~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: SessionStartLimits
+
+.. autoclass:: SessionStartLimits()
     :members:
 
 SKU
@@ -4846,6 +5302,14 @@ Entitlement
 .. attributetable:: Entitlement
 
 .. autoclass:: Entitlement()
+    :members:
+
+Subscription
+~~~~~~~~~~~~
+
+.. attributetable:: Subscription
+
+.. autoclass:: Subscription()
     :members:
 
 RawMessageDeleteEvent
@@ -4952,6 +5416,22 @@ RawAppCommandPermissionsUpdateEvent
 .. autoclass:: RawAppCommandPermissionsUpdateEvent()
     :members:
 
+RawPollVoteActionEvent
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: RawPollVoteActionEvent
+
+.. autoclass:: RawPollVoteActionEvent()
+    :members:
+
+RawPresenceUpdateEvent
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: RawPresenceUpdateEvent
+
+.. autoclass:: RawPresenceUpdateEvent()
+    :members:
+
 PartialWebhookGuild
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -4966,6 +5446,38 @@ PartialWebhookChannel
 .. attributetable:: PartialWebhookChannel
 
 .. autoclass:: PartialWebhookChannel()
+    :members:
+
+PollAnswer
+~~~~~~~~~~
+
+.. attributetable:: PollAnswer
+
+.. autoclass:: PollAnswer()
+    :members:
+
+MessageSnapshot
+~~~~~~~~~~~~~~~~~
+
+.. attributetable:: MessageSnapshot
+
+.. autoclass:: MessageSnapshot
+    :members:
+
+ClientStatus
+~~~~~~~~~~~~
+
+.. attributetable:: ClientStatus
+
+.. autoclass:: ClientStatus()
+    :members:
+
+CallMessage
+~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: CallMessage
+
+.. autoclass:: CallMessage()
     :members:
 
 .. _discord_api_data:
@@ -5039,6 +5551,22 @@ RoleSubscriptionInfo
 .. attributetable:: RoleSubscriptionInfo
 
 .. autoclass:: RoleSubscriptionInfo
+    :members:
+
+PurchaseNotification
+~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: PurchaseNotification
+
+.. autoclass:: PurchaseNotification()
+    :members:
+
+GuildProductPurchase
++++++++++++++++++++++
+
+.. attributetable:: GuildProductPurchase
+
+.. autoclass:: GuildProductPurchase()
     :members:
 
 Intents
@@ -5225,12 +5753,53 @@ SKUFlags
 .. autoclass:: SKUFlags()
     :members:
 
+EmbedFlags
+~~~~~~~~~~
+
+.. attributetable:: EmbedFlags
+
+.. autoclass:: EmbedFlags()
+    :members:
+
 ForumTag
 ~~~~~~~~~
 
 .. attributetable:: ForumTag
 
 .. autoclass:: ForumTag
+    :members:
+
+Poll
+~~~~
+
+.. attributetable:: Poll
+
+.. autoclass:: Poll
+    :members:
+
+PollMedia
+~~~~~~~~~
+
+.. attributetable:: PollMedia
+
+.. autoclass:: PollMedia
+    :members:
+
+UnfurledMediaItem
+~~~~~~~~~~~~~~~~~
+
+.. attributetable:: UnfurledMediaItem
+
+.. autoclass:: UnfurledMediaItem
+    :members:
+
+
+MediaGalleryItem
+~~~~~~~~~~~~~~~~
+
+.. attributetable:: MediaGalleryItem
+
+.. autoclass:: MediaGalleryItem
     :members:
 
 
@@ -5267,6 +5836,8 @@ The following exceptions are thrown by the library.
 
 .. autoexception:: InteractionResponded
 
+.. autoexception:: MissingApplicationID
+
 .. autoexception:: discord.opus.OpusError
 
 .. autoexception:: discord.opus.OpusNotLoaded
@@ -5284,6 +5855,7 @@ Exception Hierarchy
                 - :exc:`ConnectionClosed`
                 - :exc:`PrivilegedIntentsRequired`
                 - :exc:`InteractionResponded`
+                - :exc:`MissingApplicationID`
             - :exc:`GatewayNotFound`
             - :exc:`HTTPException`
                 - :exc:`Forbidden`

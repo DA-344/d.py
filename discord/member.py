@@ -34,15 +34,15 @@ import discord.abc
 
 from . import utils
 from .asset import Asset
-from .utils import MISSING
-from .user import BaseUser, User, _UserTag
-from .activity import create_activity, ActivityTypes
+from .utils import MISSING, _bytes_to_base64_data
+from .user import BaseUser, ClientUser, User, _UserTag
 from .permissions import Permissions
-from .enums import Status, try_enum
+from .enums import Status
 from .errors import ClientException
 from .colour import Colour
 from .object import Object
 from .flags import MemberFlags
+from .presences import ClientStatus
 
 __all__ = (
     'VoiceState',
@@ -57,17 +57,15 @@ if TYPE_CHECKING:
     from .channel import DMChannel, VoiceChannel, StageChannel
     from .flags import PublicUserFlags
     from .guild import Guild
-    from .types.activity import (
-        ClientStatus as ClientStatusPayload,
-        PartialPresenceUpdate,
-    )
+    from .activity import ActivityTypes
+    from .presences import RawPresenceUpdateEvent
     from .types.member import (
         MemberWithUser as MemberWithUserPayload,
         Member as MemberPayload,
         UserWithMember as UserWithMemberPayload,
     )
     from .types.gateway import GuildMemberUpdateEvent
-    from .types.user import User as UserPayload
+    from .types.user import User as UserPayload, AvatarDecorationData
     from .abc import Snowflake
     from .state import ConnectionState
     from .message import Message
@@ -168,46 +166,6 @@ class VoiceState:
         return f'<{self.__class__.__name__} {inner}>'
 
 
-class _ClientStatus:
-    __slots__ = ('_status', 'desktop', 'mobile', 'web')
-
-    def __init__(self):
-        self._status: str = 'offline'
-
-        self.desktop: Optional[str] = None
-        self.mobile: Optional[str] = None
-        self.web: Optional[str] = None
-
-    def __repr__(self) -> str:
-        attrs = [
-            ('_status', self._status),
-            ('desktop', self.desktop),
-            ('mobile', self.mobile),
-            ('web', self.web),
-        ]
-        inner = ' '.join('%s=%r' % t for t in attrs)
-        return f'<{self.__class__.__name__} {inner}>'
-
-    def _update(self, status: str, data: ClientStatusPayload, /) -> None:
-        self._status = status
-
-        self.desktop = data.get('desktop')
-        self.mobile = data.get('mobile')
-        self.web = data.get('web')
-
-    @classmethod
-    def _copy(cls, client_status: Self, /) -> Self:
-        self = cls.__new__(cls)  # bypass __init__
-
-        self._status = client_status._status
-
-        self.desktop = client_status.desktop
-        self.mobile = client_status.mobile
-        self.web = client_status.web
-
-        return self
-
-
 def flatten_user(cls: T) -> T:
     for attr, value in itertools.chain(BaseUser.__dict__.items(), User.__dict__.items()):
         # ignore private/special methods
@@ -303,9 +261,13 @@ class Member(discord.abc.Messageable, _UserTag):
         "Nitro boost" on the guild, if available. This could be ``None``.
     timed_out_until: Optional[:class:`datetime.datetime`]
         An aware datetime object that specifies the date and time in UTC that the member's time out will expire.
-        This will be set to ``None`` if the user is not timed out.
+        This will be set to ``None`` or a time in the past if the user is not timed out.
 
         .. versionadded:: 2.0
+    client_status: :class:`ClientStatus`
+        Model which holds information about the status of the member on various clients/platforms via presence updates.
+
+        .. versionadded:: 2.5
     """
 
     __slots__ = (
@@ -318,11 +280,13 @@ class Member(discord.abc.Messageable, _UserTag):
         'nick',
         'timed_out_until',
         '_permissions',
-        '_client_status',
+        'client_status',
         '_user',
         '_state',
         '_avatar',
+        '_banner',
         '_flags',
+        '_avatar_decoration_data',
     )
 
     if TYPE_CHECKING:
@@ -342,6 +306,8 @@ class Member(discord.abc.Messageable, _UserTag):
         banner: Optional[Asset]
         accent_color: Optional[Colour]
         accent_colour: Optional[Colour]
+        avatar_decoration: Optional[Asset]
+        avatar_decoration_sku_id: Optional[int]
 
     def __init__(self, *, data: MemberWithUserPayload, guild: Guild, state: ConnectionState):
         self._state: ConnectionState = state
@@ -350,15 +316,17 @@ class Member(discord.abc.Messageable, _UserTag):
         self.joined_at: Optional[datetime.datetime] = utils.parse_time(data.get('joined_at'))
         self.premium_since: Optional[datetime.datetime] = utils.parse_time(data.get('premium_since'))
         self._roles: utils.SnowflakeList = utils.SnowflakeList(map(int, data['roles']))
-        self._client_status: _ClientStatus = _ClientStatus()
+        self.client_status: ClientStatus = ClientStatus()
         self.activities: Tuple[ActivityTypes, ...] = ()
         self.nick: Optional[str] = data.get('nick', None)
         self.pending: bool = data.get('pending', False)
         self._avatar: Optional[str] = data.get('avatar')
+        self._banner: Optional[str] = data.get('banner')
         self._permissions: Optional[int]
         self._flags: int = data['flags']
+        self._avatar_decoration_data: Optional[AvatarDecorationData] = data.get('avatar_decoration_data')
         try:
-            self._permissions = int(data['permissions'])
+            self._permissions = int(data['permissions'])  # pyright: ignore[reportTypedDictNotRequiredAccess]
         except KeyError:
             self._permissions = None
 
@@ -388,6 +356,15 @@ class Member(discord.abc.Messageable, _UserTag):
         data['user'] = author._to_minimal_user_json()  # type: ignore
         return cls(data=data, guild=message.guild, state=message._state)  # type: ignore
 
+    @classmethod
+    def _from_client_user(cls, *, user: ClientUser, guild: Guild, state: ConnectionState) -> Self:
+        data = {
+            'roles': [],
+            'user': user._to_minimal_user_json(),
+            'flags': 0,
+        }
+        return cls(data=data, guild=guild, state=state)  # type: ignore
+
     def _update_from_message(self, data: MemberPayload) -> None:
         self.joined_at = utils.parse_time(data.get('joined_at'))
         self.premium_since = utils.parse_time(data.get('premium_since'))
@@ -415,7 +392,7 @@ class Member(discord.abc.Messageable, _UserTag):
         self._roles = utils.SnowflakeList(member._roles, is_sorted=True)
         self.joined_at = member.joined_at
         self.premium_since = member.premium_since
-        self._client_status = _ClientStatus._copy(member._client_status)
+        self.client_status = member.client_status
         self.guild = member.guild
         self.nick = member.nick
         self.pending = member.pending
@@ -425,6 +402,8 @@ class Member(discord.abc.Messageable, _UserTag):
         self._permissions = member._permissions
         self._state = member._state
         self._avatar = member._avatar
+        self._banner = member._banner
+        self._avatar_decoration_data = member._avatar_decoration_data
 
         # Reference will not be copied unless necessary by PRESENCE_UPDATE
         # See below
@@ -439,12 +418,12 @@ class Member(discord.abc.Messageable, _UserTag):
         # the nickname change is optional,
         # if it isn't in the payload then it didn't change
         try:
-            self.nick = data['nick']
+            self.nick = data['nick']  # pyright: ignore[reportTypedDictNotRequiredAccess]
         except KeyError:
             pass
 
         try:
-            self.pending = data['pending']
+            self.pending = data['pending']  # pyright: ignore[reportTypedDictNotRequiredAccess]
         except KeyError:
             pass
 
@@ -452,19 +431,29 @@ class Member(discord.abc.Messageable, _UserTag):
         self.timed_out_until = utils.parse_time(data.get('communication_disabled_until'))
         self._roles = utils.SnowflakeList(map(int, data['roles']))
         self._avatar = data.get('avatar')
+        self._banner = data.get('banner')
         self._flags = data.get('flags', 0)
+        self._avatar_decoration_data = data.get('avatar_decoration_data')
 
-    def _presence_update(self, data: PartialPresenceUpdate, user: UserPayload) -> Optional[Tuple[User, User]]:
-        self.activities = tuple(create_activity(d, self._state) for d in data['activities'])
-        self._client_status._update(data['status'], data['client_status'])
+    def _presence_update(self, raw: RawPresenceUpdateEvent, user: UserPayload) -> Optional[Tuple[User, User]]:
+        self.activities = raw.activities
+        self.client_status = raw.client_status
 
         if len(user) > 1:
             return self._update_inner_user(user)
-        return None
 
     def _update_inner_user(self, user: UserPayload) -> Optional[Tuple[User, User]]:
         u = self._user
-        original = (u.name, u.discriminator, u._avatar, u.global_name, u._public_flags)
+        original = (
+            u.name,
+            u.discriminator,
+            u._avatar,
+            u.global_name,
+            u._public_flags,
+            u._avatar_decoration_data['sku_id'] if u._avatar_decoration_data is not None else None,
+        )
+
+        decoration_payload = user.get('avatar_decoration_data')
         # These keys seem to always be available
         modified = (
             user['username'],
@@ -472,17 +461,25 @@ class Member(discord.abc.Messageable, _UserTag):
             user['avatar'],
             user.get('global_name'),
             user.get('public_flags', 0),
+            decoration_payload['sku_id'] if decoration_payload is not None else None,
         )
         if original != modified:
             to_return = User._copy(self._user)
-            u.name, u.discriminator, u._avatar, u.global_name, u._public_flags = modified
+            u.name, u.discriminator, u._avatar, u.global_name, u._public_flags, u._avatar_decoration_data = (
+                user['username'],
+                user['discriminator'],
+                user['avatar'],
+                user.get('global_name'),
+                user.get('public_flags', 0),
+                decoration_payload,
+            )
             # Signal to dispatch on_user_update
             return to_return, u
 
     @property
     def status(self) -> Status:
         """:class:`Status`: The member's overall status. If the value is unknown, then it will be a :class:`str` instead."""
-        return try_enum(Status, self._client_status._status)
+        return self.client_status.status
 
     @property
     def raw_status(self) -> str:
@@ -490,31 +487,36 @@ class Member(discord.abc.Messageable, _UserTag):
 
         .. versionadded:: 1.5
         """
-        return self._client_status._status
+        return self.client_status._status
 
     @status.setter
     def status(self, value: Status) -> None:
         # internal use only
-        self._client_status._status = str(value)
+        self.client_status._status = str(value)
 
     @property
     def mobile_status(self) -> Status:
         """:class:`Status`: The member's status on a mobile device, if applicable."""
-        return try_enum(Status, self._client_status.mobile or 'offline')
+        return self.client_status.mobile_status
 
     @property
     def desktop_status(self) -> Status:
         """:class:`Status`: The member's status on the desktop client, if applicable."""
-        return try_enum(Status, self._client_status.desktop or 'offline')
+        return self.client_status.desktop_status
 
     @property
     def web_status(self) -> Status:
         """:class:`Status`: The member's status on the web client, if applicable."""
-        return try_enum(Status, self._client_status.web or 'offline')
+        return self.client_status.web_status
 
     def is_on_mobile(self) -> bool:
-        """:class:`bool`: A helper function that determines if a member is active on a mobile device."""
-        return self._client_status.mobile is not None
+        """A helper function that determines if a member is active on a mobile device.
+
+        Returns
+        -------
+        :class:`bool`
+        """
+        return self.client_status.is_on_mobile()
 
     @property
     def colour(self) -> Colour:
@@ -559,7 +561,9 @@ class Member(discord.abc.Messageable, _UserTag):
             role = g.get_role(role_id)
             if role:
                 result.append(role)
-        result.append(g.default_role)
+        default_role = g.default_role
+        if default_role:
+            result.append(default_role)
         result.sort()
         return result
 
@@ -616,6 +620,28 @@ class Member(discord.abc.Messageable, _UserTag):
         if self._avatar is None:
             return None
         return Asset._from_guild_avatar(self._state, self.guild.id, self.id, self._avatar)
+
+    @property
+    def display_banner(self) -> Optional[Asset]:
+        """Optional[:class:`Asset`]: Returns the member's displayed banner, if any.
+
+        This is the member's guild banner if available, otherwise it's their
+        global banner. If the member has no banner set then ``None`` is returned.
+
+        .. versionadded:: 2.5
+        """
+        return self.guild_banner or self._user.banner
+
+    @property
+    def guild_banner(self) -> Optional[Asset]:
+        """Optional[:class:`Asset`]: Returns an :class:`Asset` for the guild banner
+        the member has. If unavailable, ``None`` is returned.
+
+        .. versionadded:: 2.5
+        """
+        if self._banner is None:
+            return None
+        return Asset._from_guild_banner(self._state, self.guild.id, self.id, self._banner)
 
     @property
     def activity(self) -> Optional[ActivityTypes]:
@@ -1018,7 +1044,7 @@ class Member(discord.abc.Messageable, _UserTag):
 
         You must have :attr:`~Permissions.manage_roles` to
         use this, and the added :class:`Role`\s must appear lower in the list
-        of roles than the highest role of the member.
+        of roles than the highest role of the client.
 
         Parameters
         -----------
@@ -1057,7 +1083,7 @@ class Member(discord.abc.Messageable, _UserTag):
 
         You must have :attr:`~Permissions.manage_roles` to
         use this, and the removed :class:`Role`\s must appear lower in the list
-        of roles than the highest role of the member.
+        of roles than the highest role of the client.
 
         Parameters
         -----------
@@ -1094,6 +1120,40 @@ class Member(discord.abc.Messageable, _UserTag):
             user_id = self.id
             for role in roles:
                 await req(guild_id, user_id, role.id, reason=reason)
+
+    async def fetch_voice(self) -> VoiceState:
+        """|coro|
+
+        Retrieves the current voice state from this member.
+
+        .. versionadded:: 2.5
+
+        Raises
+        -------
+        NotFound
+            The member is not in a voice channel.
+        Forbidden
+            You do not have permissions to get a voice state.
+        HTTPException
+            Retrieving the voice state failed.
+
+        Returns
+        -------
+        :class:`VoiceState`
+            The current voice state of the member.
+        """
+        guild_id = self.guild.id
+        if self._state.self_id == self.id:
+            data = await self._state.http.get_my_voice_state(guild_id)
+        else:
+            data = await self._state.http.get_voice_state(guild_id, self.id)
+
+        channel_id = data.get('channel_id')
+        channel: Optional[VocalGuildChannel] = None
+        if channel_id is not None:
+            channel = self.guild.get_channel(int(channel_id))  # type: ignore # must be voice channel here
+
+        return VoiceState(data=data, channel=channel)
 
     def get_role(self, role_id: int, /) -> Optional[Role]:
         """Returns a role with the given ID from roles which the member has.

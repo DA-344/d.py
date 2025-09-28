@@ -28,6 +28,22 @@ InteractionResponse
 .. autoclass:: InteractionResponse()
     :members:
 
+InteractionCallbackResponse
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: InteractionCallbackResponse
+
+.. autoclass:: InteractionCallbackResponse()
+    :members:
+
+InteractionCallbackActivityInstance
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: InteractionCallbackActivityInstance
+
+.. autoclass:: InteractionCallbackActivityInstance()
+    :members:
+
 InteractionMessage
 ~~~~~~~~~~~~~~~~~~~
 
@@ -43,6 +59,14 @@ MessageInteraction
 .. attributetable:: MessageInteraction
 
 .. autoclass:: MessageInteraction()
+    :members:
+
+MessageInteractionMetadata
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: MessageInteractionMetadata
+
+.. autoclass:: MessageInteractionMetadata()
     :members:
 
 Component
@@ -89,6 +113,77 @@ TextInput
     :members:
     :inherited-members:
 
+
+SectionComponent
+~~~~~~~~~~~~~~~~
+
+.. attributetable:: SectionComponent
+
+.. autoclass:: SectionComponent()
+    :members:
+    :inherited-members:
+
+
+ThumbnailComponent
+~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: ThumbnailComponent
+
+.. autoclass:: ThumbnailComponent()
+    :members:
+    :inherited-members:
+
+
+TextDisplay
+~~~~~~~~~~~
+
+.. attributetable:: TextDisplay
+
+.. autoclass:: TextDisplay()
+    :members:
+    :inherited-members:
+
+
+MediaGalleryComponent
+~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: MediaGalleryComponent
+
+.. autoclass:: MediaGalleryComponent()
+    :members:
+    :inherited-members:
+
+
+FileComponent
+~~~~~~~~~~~~~
+
+.. attributetable:: FileComponent
+
+.. autoclass:: FileComponent()
+    :members:
+    :inherited-members:
+
+
+SeparatorComponent
+~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: SeparatorComponent
+
+.. autoclass:: SeparatorComponent()
+    :members:
+    :inherited-members:
+
+
+Container
+~~~~~~~~~
+
+.. attributetable:: Container
+
+.. autoclass:: Container()
+    :members:
+    :inherited-members:
+
+
 AppCommand
 ~~~~~~~~~~~
 
@@ -127,6 +222,22 @@ AppCommandPermissions
 .. attributetable:: discord.app_commands.AppCommandPermissions
 
 .. autoclass:: discord.app_commands.AppCommandPermissions()
+    :members:
+
+AppCommandContext
+~~~~~~~~~~~~~~~~~
+
+.. attributetable:: discord.app_commands.AppCommandContext
+
+.. autoclass:: discord.app_commands.AppCommandContext
+    :members:
+
+AppInstallationType
+~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: discord.app_commands.AppInstallationType
+
+.. autoclass:: discord.app_commands.AppInstallationType
     :members:
 
 GuildAppCommandPermissions
@@ -259,7 +370,7 @@ Enumerations
 
     .. attribute:: action_row
 
-        Represents the group component which holds different components in a row.
+        Represents a component which holds different components in a row.
 
     .. attribute:: button
 
@@ -289,6 +400,38 @@ Enumerations
 
         Represents a select in which both users and roles can be selected.
 
+    .. attribute:: channel_select
+
+        Represents a channel select component.
+
+    .. attribute:: section
+
+        Represents a component which holds different components in a section.
+
+    .. attribute:: text_display
+
+        Represents a text display component.
+
+    .. attribute:: thumbnail
+
+        Represents a thumbnail component.
+
+    .. attribute:: media_gallery
+
+        Represents a media gallery component.
+
+    .. attribute:: file
+
+        Represents a file component.
+
+    .. attribute:: separator
+
+        Represents a separator component.
+
+    .. attribute:: container
+
+        Represents a component which holds different components in a container.
+
 .. class:: ButtonStyle
 
     Represents the style of the button component.
@@ -310,7 +453,12 @@ Enumerations
     .. attribute:: link
 
         Represents a link button.
+    .. attribute:: premium
 
+        Represents a button denoting that buying a SKU is
+        required to perform this action.
+
+        .. versionadded:: 2.4
     .. attribute:: blurple
 
         An alias for :attr:`primary`.
@@ -418,6 +566,19 @@ Enumerations
 
         The permission is for a user.
 
+.. class:: SeparatorSize
+
+    The separator's size type.
+
+    .. versionadded:: 2.6
+
+    .. attribute:: small
+
+        A small separator.
+    .. attribute:: large
+
+        A large separator.
+
 .. _discord_ui_kit:
 
 Bot UI Kit
@@ -433,6 +594,7 @@ View
 
 .. autoclass:: discord.ui.View
     :members:
+    :inherited-members:
 
 Modal
 ~~~~~~
@@ -440,6 +602,15 @@ Modal
 .. attributetable:: discord.ui.Modal
 
 .. autoclass:: discord.ui.Modal
+    :members:
+    :inherited-members:
+
+LayoutView
+~~~~~~~~~~
+
+.. attributetable:: discord.ui.LayoutView
+
+.. autoclass:: discord.ui.LayoutView
     :members:
     :inherited-members:
 
@@ -534,6 +705,86 @@ TextInput
 .. attributetable:: discord.ui.TextInput
 
 .. autoclass:: discord.ui.TextInput
+    :members:
+    :inherited-members:
+
+
+Container
+~~~~~~~~~
+
+.. attributetable:: discord.ui.Container
+
+.. autoclass:: discord.ui.Container
+    :members:
+    :inherited-members:
+
+
+File
+~~~~
+
+.. attributetable:: discord.ui.File
+
+.. autoclass:: discord.ui.File
+    :members:
+    :inherited-members:
+
+
+MediaGallery
+~~~~~~~~~~~~
+
+.. attributetable:: discord.ui.MediaGallery
+
+.. autoclass:: discord.ui.MediaGallery
+    :members:
+    :inherited-members:
+
+
+Section
+~~~~~~~
+
+.. attributetable:: discord.ui.Section
+
+.. autoclass:: discord.ui.Section
+    :members:
+    :inherited-members:
+
+
+Separator
+~~~~~~~~~
+
+.. attributetable:: discord.ui.Separator
+
+.. autoclass:: discord.ui.Separator
+    :members:
+    :inherited-members:
+
+
+TextDisplay
+~~~~~~~~~~~
+
+.. attributetable:: discord.ui.TextDisplay
+
+.. autoclass:: discord.ui.TextDisplay
+    :members:
+    :inherited-members:
+
+
+Thumbnail
+~~~~~~~~~
+
+.. attributetable:: discord.ui.Thumbnail
+
+.. autoclass:: discord.ui.Thumbnail
+    :members:
+    :inherited-members:
+
+
+ActionRow
+~~~~~~~~~
+
+.. attributetable:: discord.ui.ActionRow
+
+.. autoclass:: discord.ui.ActionRow
     :members:
     :inherited-members:
 
@@ -640,6 +891,24 @@ Decorators
     :decorator:
 
 .. autofunction:: discord.app_commands.guild_only
+    :decorator:
+
+.. autofunction:: discord.app_commands.dm_only
+    :decorator:
+
+.. autofunction:: discord.app_commands.private_channel_only
+    :decorator:
+
+.. autofunction:: discord.app_commands.allowed_contexts
+    :decorator:
+
+.. autofunction:: discord.app_commands.user_install
+    :decorator:
+
+.. autofunction:: discord.app_commands.guild_install
+    :decorator:
+
+.. autofunction:: discord.app_commands.allowed_installs
     :decorator:
 
 .. autofunction:: discord.app_commands.default_permissions
@@ -825,9 +1094,6 @@ Exceptions
 .. autoexception:: discord.app_commands.CommandNotFound
     :members:
 
-.. autoexception:: discord.app_commands.MissingApplicationID
-    :members:
-
 .. autoexception:: discord.app_commands.CommandSyncFailure
     :members:
 
@@ -852,7 +1118,7 @@ Exception Hierarchy
             - :exc:`~discord.app_commands.CommandAlreadyRegistered`
             - :exc:`~discord.app_commands.CommandSignatureMismatch`
             - :exc:`~discord.app_commands.CommandNotFound`
-            - :exc:`~discord.app_commands.MissingApplicationID`
+            - :exc:`~discord.MissingApplicationID`
             - :exc:`~discord.app_commands.CommandSyncFailure`
         - :exc:`~discord.HTTPException`
             - :exc:`~discord.app_commands.CommandSyncFailure`

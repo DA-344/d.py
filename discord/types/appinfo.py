@@ -24,17 +24,22 @@ DEALINGS IN THE SOFTWARE.
 
 from __future__ import annotations
 
-from typing import TypedDict, List, Optional
+from typing import Literal, Dict, TypedDict, List, Optional
 from typing_extensions import NotRequired
 
 from .user import User
 from .team import Team
 from .snowflake import Snowflake
+from .emoji import Emoji
 
 
 class InstallParams(TypedDict):
     scopes: List[str]
     permissions: str
+
+
+class AppIntegrationTypeConfig(TypedDict):
+    oauth2_install_params: NotRequired[InstallParams]
 
 
 class BaseAppInfo(TypedDict):
@@ -45,6 +50,7 @@ class BaseAppInfo(TypedDict):
     summary: str
     description: str
     flags: int
+    approximate_user_install_count: NotRequired[int]
     cover_image: NotRequired[str]
     terms_of_service_url: NotRequired[str]
     privacy_policy_url: NotRequired[str]
@@ -67,6 +73,7 @@ class AppInfo(BaseAppInfo):
     tags: NotRequired[List[str]]
     install_params: NotRequired[InstallParams]
     custom_install_url: NotRequired[str]
+    integration_types_config: NotRequired[Dict[Literal['0', '1'], AppIntegrationTypeConfig]]
 
 
 class PartialAppInfo(BaseAppInfo, total=False):
@@ -78,3 +85,7 @@ class PartialAppInfo(BaseAppInfo, total=False):
 class GatewayAppInfo(TypedDict):
     id: Snowflake
     flags: int
+
+
+class ListAppEmojis(TypedDict):
+    items: List[Emoji]

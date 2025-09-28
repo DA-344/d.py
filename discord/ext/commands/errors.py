@@ -24,10 +24,12 @@ DEALINGS IN THE SOFTWARE.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union, Generic
 
 from discord.errors import ClientException, DiscordException
 from discord.utils import _human_join
+
+from ._types import BotT
 
 if TYPE_CHECKING:
     from discord.abc import GuildChannel
@@ -35,7 +37,6 @@ if TYPE_CHECKING:
     from discord.types.snowflake import Snowflake, SnowflakeList
     from discord.app_commands import AppCommandError
 
-    from ._types import BotT
     from .context import Context
     from .converter import Converter
     from .cooldowns import BucketType, Cooldown
@@ -75,6 +76,7 @@ __all__ = (
     'EmojiNotFound',
     'GuildStickerNotFound',
     'ScheduledEventNotFound',
+    'SoundboardSoundNotFound',
     'PartialEmojiConversionFailure',
     'BadBoolArgument',
     'MissingRole',
@@ -234,7 +236,7 @@ class CheckFailure(CommandError):
     pass
 
 
-class CheckAnyFailure(CheckFailure):
+class CheckAnyFailure(Generic[BotT], CheckFailure):
     """Exception raised when all predicates in :func:`check_any` fail.
 
     This inherits from :exc:`CheckFailure`.
@@ -562,6 +564,24 @@ class ScheduledEventNotFound(BadArgument):
     def __init__(self, argument: str) -> None:
         self.argument: str = argument
         super().__init__(f'ScheduledEvent "{argument}" not found.')
+
+
+class SoundboardSoundNotFound(BadArgument):
+    """Exception raised when the bot can not find the soundboard sound.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 2.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The sound supplied by the caller that was not found
+    """
+
+    def __init__(self, argument: str) -> None:
+        self.argument: str = argument
+        super().__init__(f'SoundboardSound "{argument}" not found.')
 
 
 class BadBoolArgument(BadArgument):
@@ -1061,7 +1081,7 @@ class ExtensionNotFound(ExtensionError):
     """
 
     def __init__(self, name: str) -> None:
-        msg = f'Extension {name!r} could not be loaded.'
+        msg = f'Extension {name!r} could not be loaded or found.'
         super().__init__(msg, name=name)
 
 

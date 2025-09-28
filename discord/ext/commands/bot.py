@@ -166,14 +166,21 @@ class BotBase(GroupMixin[None]):
         help_command: Optional[HelpCommand] = _default,
         tree_cls: Type[app_commands.CommandTree[Any]] = app_commands.CommandTree,
         description: Optional[str] = None,
+        allowed_contexts: app_commands.AppCommandContext = MISSING,
+        allowed_installs: app_commands.AppInstallationType = MISSING,
         intents: discord.Intents,
         **options: Any,
     ) -> None:
         super().__init__(intents=intents, **options)
-        self.command_prefix: PrefixType[BotT] = command_prefix
+        self.command_prefix: PrefixType[BotT] = command_prefix  # type: ignore
         self.extra_events: Dict[str, List[CoroFunc]] = {}
         # Self doesn't have the ClientT bound, but since this is a mixin it technically does
         self.__tree: app_commands.CommandTree[Self] = tree_cls(self)  # type: ignore
+        if allowed_contexts is not MISSING:
+            self.__tree.allowed_contexts = allowed_contexts
+        if allowed_installs is not MISSING:
+            self.__tree.allowed_installs = allowed_installs
+
         self.__cogs: Dict[str, Cog] = {}
         self.__extensions: Dict[str, types.ModuleType] = {}
         self._checks: List[UserCheck] = []
@@ -480,7 +487,7 @@ class BotBase(GroupMixin[None]):
         if len(data) == 0:
             return True
 
-        return await discord.utils.async_all(f(ctx) for f in data)
+        return await discord.utils.async_all(f(ctx) for f in data)  # type: ignore
 
     async def is_owner(self, user: User, /) -> bool:
         """|coro|
@@ -521,7 +528,6 @@ class BotBase(GroupMixin[None]):
         elif self.owner_ids:
             return user.id in self.owner_ids
         else:
-
             app: discord.AppInfo = await self.application_info()  # type: ignore
             if app.team:
                 self.owner_ids = ids = {
@@ -1489,6 +1495,20 @@ class Bot(BotBase, discord.Client):
         The type of application command tree to use. Defaults to :class:`~discord.app_commands.CommandTree`.
 
         .. versionadded:: 2.0
+    allowed_contexts: :class:`~discord.app_commands.AppCommandContext`
+        The default allowed contexts that applies to all application commands
+        in the application command tree.
+
+        Note that you can override this on a per command basis.
+
+        .. versionadded:: 2.4
+    allowed_installs: :class:`~discord.app_commands.AppInstallationType`
+        The default allowed install locations that apply to all application commands
+        in the application command tree.
+
+        Note that you can override this on a per command basis.
+
+        .. versionadded:: 2.4
     """
 
     pass

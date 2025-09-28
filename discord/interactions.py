@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Generic, TYPE_CHECKING, Sequence, Tuple, Union, List
+from typing import Any, Dict, Optional, Generic, TYPE_CHECKING, Sequence, Tuple, Union, List, overload
 import asyncio
 import datetime
 
@@ -45,6 +45,7 @@ from .message import Message, Attachment
 from .permissions import Permissions
 from .http import handle_message_parameters
 from .webhook.async_ import async_context, Webhook, interaction_response_params, interaction_message_response_params
+from .app_commands.installs import AppCommandContext
 from .app_commands.namespace import Namespace
 from .app_commands.translator import locale_str, TranslationContext, TranslationContextLocation
 from .channel import _threaded_channel_factory
@@ -53,6 +54,8 @@ __all__ = (
     'Interaction',
     'InteractionMessage',
     'InteractionResponse',
+    'InteractionCallbackResponse',
+    'InteractionCallbackActivityInstance',
 )
 
 if TYPE_CHECKING:
@@ -60,22 +63,26 @@ if TYPE_CHECKING:
         Interaction as InteractionPayload,
         InteractionData,
         ApplicationCommandInteractionData,
+        InteractionCallback as InteractionCallbackPayload,
+        InteractionCallbackActivity as InteractionCallbackActivityPayload,
     )
     from .types.webhook import (
         Webhook as WebhookPayload,
     )
+    from .types.snowflake import Snowflake
     from .guild import Guild
     from .state import ConnectionState
     from .file import File
     from .mentions import AllowedMentions
     from aiohttp import ClientSession
     from .embeds import Embed
-    from .ui.view import View
+    from .ui.view import BaseView, View, LayoutView
     from .app_commands.models import Choice, ChoiceT
     from .ui.modal import Modal
     from .channel import VoiceChannel, StageChannel, TextChannel, ForumChannel, CategoryChannel, DMChannel, GroupChannel
     from .threads import Thread
     from .app_commands.commands import Command, ContextMenu
+    from .poll import Poll
 
     InteractionChannel = Union[
         VoiceChannel,
@@ -86,6 +93,10 @@ if TYPE_CHECKING:
         Thread,
         DMChannel,
         GroupChannel,
+    ]
+    InteractionCallbackResource = Union[
+        "InteractionMessage",
+        "InteractionCallbackActivityInstance",
     ]
 
 MISSING: Any = utils.MISSING
@@ -139,6 +150,10 @@ class Interaction(Generic[ClientT]):
     command_failed: :class:`bool`
         Whether the command associated with this interaction failed to execute.
         This includes checks and execution.
+    context: :class:`.AppCommandContext`
+        The context of the interaction.
+
+        .. versionadded:: 2.4
     """
 
     __slots__: Tuple[str, ...] = (
@@ -157,6 +172,8 @@ class Interaction(Generic[ClientT]):
         'command_failed',
         'entitlement_sku_ids',
         'entitlements',
+        "context",
+        '_integration_owners',
         '_permissions',
         '_app_permissions',
         '_state',
@@ -183,6 +200,9 @@ class Interaction(Generic[ClientT]):
         self.command_failed: bool = False
         self._from_data(data)
 
+    def __repr__(self) -> str:
+        return f'<{self.__class__.__name__} id={self.id} type={self.type!r} guild_id={self.guild_id!r} user={self.user!r}>'
+
     def _from_data(self, data: InteractionPayload):
         self.id: int = int(data['id'])
         self.type: InteractionType = try_enum(InteractionType, data['type'])
@@ -194,17 +214,29 @@ class Interaction(Generic[ClientT]):
         self.application_id: int = int(data['application_id'])
         self.entitlement_sku_ids: List[int] = [int(x) for x in data.get('entitlement_skus', []) or []]
         self.entitlements: List[Entitlement] = [Entitlement(self._state, x) for x in data.get('entitlements', [])]
+        # This is not entirely useful currently, unsure how to expose it in a way that it is.
+        self._integration_owners: Dict[int, Snowflake] = {
+            int(k): int(v) for k, v in data.get('authorizing_integration_owners', {}).items()
+        }
+        try:
+            value = data['context']  # pyright: ignore[reportTypedDictNotRequiredAccess]
+            self.context = AppCommandContext._from_value([value])
+        except KeyError:
+            self.context = AppCommandContext()
 
         self.locale: Locale = try_enum(Locale, data.get('locale', 'en-US'))
         self.guild_locale: Optional[Locale]
         try:
-            self.guild_locale = try_enum(Locale, data['guild_locale'])
+            self.guild_locale = try_enum(Locale, data['guild_locale'])  # pyright: ignore[reportTypedDictNotRequiredAccess]
         except KeyError:
             self.guild_locale = None
 
         guild = None
         if self.guild_id:
-            guild = self._state._get_or_create_unavailable_guild(self.guild_id)
+            # The data type is a TypedDict but it doesn't narrow to Dict[str, Any] properly
+            guild = self._state._get_or_create_unavailable_guild(self.guild_id, data=data.get('guild'))  # type: ignore
+            if guild.me is None and self._client.user is not None:
+                guild._add_member(Member._from_client_user(user=self._client.user, guild=guild, state=self._state))
 
         raw_channel = data.get('channel', {})
         channel_id = utils._get_as_snowflake(raw_channel, 'id')
@@ -371,6 +403,22 @@ class Interaction(Generic[ClientT]):
         """:class:`bool`: Returns ``True`` if the interaction is expired."""
         return utils.utcnow() >= self.expires_at
 
+    def is_guild_integration(self) -> bool:
+        """:class:`bool`: Returns ``True`` if the interaction is a guild integration.
+
+        .. versionadded:: 2.4
+        """
+        if self.guild_id:
+            return self.guild_id == self._integration_owners.get(0)
+        return False
+
+    def is_user_integration(self) -> bool:
+        """:class:`bool`: Returns ``True`` if the interaction is a user integration.
+
+        .. versionadded:: 2.4
+        """
+        return self.user.id == self._integration_owners.get(1)
+
     async def original_response(self) -> InteractionMessage:
         """|coro|
 
@@ -421,6 +469,17 @@ class Interaction(Generic[ClientT]):
         self._original_response = message
         return message
 
+    @overload
+    async def edit_original_response(
+        self,
+        *,
+        attachments: Sequence[Union[Attachment, File]] = MISSING,
+        view: LayoutView,
+        allowed_mentions: Optional[AllowedMentions] = None,
+    ) -> InteractionMessage:
+        ...
+
+    @overload
     async def edit_original_response(
         self,
         *,
@@ -430,6 +489,20 @@ class Interaction(Generic[ClientT]):
         attachments: Sequence[Union[Attachment, File]] = MISSING,
         view: Optional[View] = MISSING,
         allowed_mentions: Optional[AllowedMentions] = None,
+        poll: Poll = MISSING,
+    ) -> InteractionMessage:
+        ...
+
+    async def edit_original_response(
+        self,
+        *,
+        content: Optional[str] = MISSING,
+        embeds: Sequence[Embed] = MISSING,
+        embed: Optional[Embed] = MISSING,
+        attachments: Sequence[Union[Attachment, File]] = MISSING,
+        view: Optional[BaseView] = MISSING,
+        allowed_mentions: Optional[AllowedMentions] = None,
+        poll: Poll = MISSING,
     ) -> InteractionMessage:
         """|coro|
 
@@ -464,6 +537,14 @@ class Interaction(Generic[ClientT]):
         view: Optional[:class:`~discord.ui.View`]
             The updated view to update this message with. If ``None`` is passed then
             the view is removed.
+        poll: :class:`Poll`
+            The poll to create when editing the message.
+
+            .. versionadded:: 2.5
+
+            .. note::
+
+                This is only accepted when the response type is :attr:`InteractionResponseType.deferred_channel_message`.
 
         Raises
         -------
@@ -493,6 +574,7 @@ class Interaction(Generic[ClientT]):
             view=view,
             allowed_mentions=allowed_mentions,
             previous_allowed_mentions=previous_mentions,
+            poll=poll,
         ) as params:
             adapter = async_context.get()
             http = self._state.http
@@ -585,6 +667,106 @@ class Interaction(Generic[ClientT]):
         return await translator.translate(string, locale=locale, context=context)
 
 
+class InteractionCallbackActivityInstance:
+    """Represents an activity instance launched as an interaction response.
+
+    .. versionadded:: 2.5
+
+    Attributes
+    ----------
+    id: :class:`str`
+        The activity instance ID.
+    """
+
+    __slots__ = ('id',)
+
+    def __init__(self, data: InteractionCallbackActivityPayload) -> None:
+        self.id: str = data['id']
+
+
+class InteractionCallbackResponse(Generic[ClientT]):
+    """Represents an interaction response callback.
+
+    .. versionadded:: 2.5
+
+    Attributes
+    ----------
+    id: :class:`int`
+        The interaction ID.
+    type: :class:`InteractionResponseType`
+        The interaction callback response type.
+    resource: Optional[Union[:class:`InteractionMessage`, :class:`InteractionCallbackActivityInstance`]]
+        The resource that the interaction response created. If a message was sent, this will be
+        a :class:`InteractionMessage`. If an activity was launched this will be a
+        :class:`InteractionCallbackActivityInstance`. In any other case, this will be ``None``.
+    message_id: Optional[:class:`int`]
+        The message ID of the resource. Only available if the resource is a :class:`InteractionMessage`.
+    activity_id: Optional[:class:`str`]
+        The activity ID of the resource. Only available if the resource is a :class:`InteractionCallbackActivityInstance`.
+    """
+
+    __slots__ = (
+        '_state',
+        '_parent',
+        'type',
+        'id',
+        '_thinking',
+        '_ephemeral',
+        'message_id',
+        'activity_id',
+        'resource',
+    )
+
+    def __init__(
+        self,
+        *,
+        data: InteractionCallbackPayload,
+        parent: Interaction[ClientT],
+        state: ConnectionState,
+        type: InteractionResponseType,
+    ) -> None:
+        self._state: ConnectionState = state
+        self._parent: Interaction[ClientT] = parent
+        self.type: InteractionResponseType = type
+        self._update(data)
+
+    def _update(self, data: InteractionCallbackPayload) -> None:
+        interaction = data['interaction']
+
+        self.id: int = int(interaction['id'])
+        self._thinking: bool = interaction.get('response_message_loading', False)
+        self._ephemeral: bool = interaction.get('response_message_ephemeral', False)
+
+        self.message_id: Optional[int] = utils._get_as_snowflake(interaction, 'response_message_id')
+        self.activity_id: Optional[str] = interaction.get('activity_instance_id')
+
+        self.resource: Optional[InteractionCallbackResource] = None
+
+        resource = data.get('resource')
+        if resource is not None:
+
+            self.type = try_enum(InteractionResponseType, resource['type'])
+
+            message = resource.get('message')
+            activity_instance = resource.get('activity_instance')
+            if message is not None:
+                self.resource = InteractionMessage(
+                    state=_InteractionMessageState(self._parent, self._state),  # pyright: ignore[reportArgumentType]
+                    channel=self._parent.channel,  # type: ignore # channel should be the correct type here
+                    data=message,
+                )
+            elif activity_instance is not None:
+                self.resource = InteractionCallbackActivityInstance(activity_instance)
+
+    def is_thinking(self) -> bool:
+        """:class:`bool`: Whether the response was a thinking defer."""
+        return self._thinking
+
+    def is_ephemeral(self) -> bool:
+        """:class:`bool`: Whether the response was ephemeral."""
+        return self._ephemeral
+
+
 class InteractionResponse(Generic[ClientT]):
     """Represents a Discord interaction response.
 
@@ -614,7 +796,12 @@ class InteractionResponse(Generic[ClientT]):
         """:class:`InteractionResponseType`: The type of response that was sent, ``None`` if response is not done."""
         return self._response_type
 
-    async def defer(self, *, ephemeral: bool = False, thinking: bool = False) -> None:
+    async def defer(
+        self,
+        *,
+        ephemeral: bool = False,
+        thinking: bool = False,
+    ) -> Optional[InteractionCallbackResponse[ClientT]]:
         """|coro|
 
         Defers the interaction response.
@@ -627,6 +814,9 @@ class InteractionResponse(Generic[ClientT]):
         - :attr:`InteractionType.application_command`
         - :attr:`InteractionType.component`
         - :attr:`InteractionType.modal_submit`
+
+        .. versionchanged:: 2.5
+            This now returns a :class:`InteractionCallbackResponse` instance.
 
         Parameters
         -----------
@@ -646,6 +836,11 @@ class InteractionResponse(Generic[ClientT]):
             Deferring the interaction failed.
         InteractionResponded
             This interaction has already been responded to before.
+
+        Returns
+        -------
+        Optional[:class:`InteractionCallbackResponse`]
+            The interaction callback resource, or ``None``.
         """
         if self._response_type:
             raise InteractionResponded(self._parent)
@@ -670,7 +865,7 @@ class InteractionResponse(Generic[ClientT]):
             adapter = async_context.get()
             params = interaction_response_params(type=defer_type, data=data)
             http = parent._state.http
-            await adapter.create_interaction_response(
+            response = await adapter.create_interaction_response(
                 parent.id,
                 parent.token,
                 session=parent._session,
@@ -679,6 +874,12 @@ class InteractionResponse(Generic[ClientT]):
                 params=params,
             )
             self._response_type = InteractionResponseType(defer_type)
+            return InteractionCallbackResponse(
+                data=response,
+                parent=self._parent,
+                state=self._parent._state,
+                type=self._response_type,
+            )
 
     async def pong(self) -> None:
         """|coro|
@@ -712,6 +913,22 @@ class InteractionResponse(Generic[ClientT]):
             )
             self._response_type = InteractionResponseType.pong
 
+    @overload
+    async def send_message(
+        self,
+        *,
+        file: File = MISSING,
+        files: Sequence[File] = MISSING,
+        view: LayoutView,
+        ephemeral: bool = False,
+        allowed_mentions: AllowedMentions = MISSING,
+        suppress_embeds: bool = False,
+        silent: bool = False,
+        delete_after: Optional[float] = None,
+    ) -> InteractionCallbackResponse[ClientT]:
+        ...
+
+    @overload
     async def send_message(
         self,
         content: Optional[Any] = None,
@@ -727,10 +944,33 @@ class InteractionResponse(Generic[ClientT]):
         suppress_embeds: bool = False,
         silent: bool = False,
         delete_after: Optional[float] = None,
-    ) -> None:
+        poll: Poll = MISSING,
+    ) -> InteractionCallbackResponse[ClientT]:
+        ...
+
+    async def send_message(
+        self,
+        content: Optional[Any] = None,
+        *,
+        embed: Embed = MISSING,
+        embeds: Sequence[Embed] = MISSING,
+        file: File = MISSING,
+        files: Sequence[File] = MISSING,
+        view: BaseView = MISSING,
+        tts: bool = False,
+        ephemeral: bool = False,
+        allowed_mentions: AllowedMentions = MISSING,
+        suppress_embeds: bool = False,
+        silent: bool = False,
+        delete_after: Optional[float] = None,
+        poll: Poll = MISSING,
+    ) -> InteractionCallbackResponse[ClientT]:
         """|coro|
 
         Responds to this interaction by sending a message.
+
+        .. versionchanged:: 2.5
+            This now returns a :class:`InteractionCallbackResponse` instance.
 
         Parameters
         -----------
@@ -748,8 +988,11 @@ class InteractionResponse(Generic[ClientT]):
             A list of files to upload. Must be a maximum of 10.
         tts: :class:`bool`
             Indicates if the message should be sent using text-to-speech.
-        view: :class:`discord.ui.View`
+        view: Union[:class:`discord.ui.View`, :class:`discord.ui.LayoutView`]
             The view to send with the message.
+
+            .. versionchanged:: 2.6
+                This now accepts :class:`discord.ui.LayoutView` instances.
         ephemeral: :class:`bool`
             Indicates if the message should only be visible to the user who started the interaction.
             If a view is sent with an ephemeral message and it has no timeout set then the timeout
@@ -770,6 +1013,10 @@ class InteractionResponse(Generic[ClientT]):
             then it is silently ignored.
 
             .. versionadded:: 2.1
+        poll: :class:`~discord.Poll`
+            The poll to send with this message.
+
+            .. versionadded:: 2.4
 
         Raises
         -------
@@ -781,6 +1028,11 @@ class InteractionResponse(Generic[ClientT]):
             The length of ``embeds`` was invalid.
         InteractionResponded
             This interaction has already been responded to before.
+
+        Returns
+        -------
+        :class:`InteractionCallbackResponse`
+            The interaction callback data.
         """
         if self._response_type:
             raise InteractionResponded(self._parent)
@@ -807,10 +1059,11 @@ class InteractionResponse(Generic[ClientT]):
             allowed_mentions=allowed_mentions,
             flags=flags,
             view=view,
+            poll=poll,
         )
 
         http = parent._state.http
-        await adapter.create_interaction_response(
+        response = await adapter.create_interaction_response(
             parent.id,
             parent.token,
             session=parent._session,
@@ -841,6 +1094,26 @@ class InteractionResponse(Generic[ClientT]):
 
             asyncio.create_task(inner_call())
 
+        return InteractionCallbackResponse(
+            data=response,
+            parent=self._parent,
+            state=self._parent._state,
+            type=self._response_type,
+        )
+
+    @overload
+    async def edit_message(
+        self,
+        *,
+        attachments: Sequence[Union[Attachment, File]] = MISSING,
+        view: LayoutView,
+        allowed_mentions: Optional[AllowedMentions] = MISSING,
+        delete_after: Optional[float] = None,
+        suppress_embeds: bool = MISSING,
+    ) -> Optional[InteractionCallbackResponse[ClientT]]:
+        ...
+
+    @overload
     async def edit_message(
         self,
         *,
@@ -852,11 +1125,28 @@ class InteractionResponse(Generic[ClientT]):
         allowed_mentions: Optional[AllowedMentions] = MISSING,
         delete_after: Optional[float] = None,
         suppress_embeds: bool = MISSING,
-    ) -> None:
+    ) -> Optional[InteractionCallbackResponse[ClientT]]:
+        ...
+
+    async def edit_message(
+        self,
+        *,
+        content: Optional[Any] = MISSING,
+        embed: Optional[Embed] = MISSING,
+        embeds: Sequence[Embed] = MISSING,
+        attachments: Sequence[Union[Attachment, File]] = MISSING,
+        view: Optional[BaseView] = MISSING,
+        allowed_mentions: Optional[AllowedMentions] = MISSING,
+        delete_after: Optional[float] = None,
+        suppress_embeds: bool = MISSING,
+    ) -> Optional[InteractionCallbackResponse[ClientT]]:
         """|coro|
 
         Responds to this interaction by editing the original message of
         a component or modal interaction.
+
+        .. versionchanged:: 2.5
+            This now returns a :class:`InteractionCallbackResponse` instance.
 
         Parameters
         -----------
@@ -875,9 +1165,12 @@ class InteractionResponse(Generic[ClientT]):
 
                 New files will always appear after current attachments.
 
-        view: Optional[:class:`~discord.ui.View`]
+        view: Optional[Union[:class:`~discord.ui.View`, :class:`~discord.ui.LayoutView`]]
             The updated view to update this message with. If ``None`` is passed then
             the view is removed.
+
+            .. versionchanged:: 2.6
+                This now accepts :class:`~discord.ui.LayoutView` instances.
         allowed_mentions: Optional[:class:`~discord.AllowedMentions`]
             Controls the mentions being processed in this message. See :meth:`.Message.edit`
             for more information.
@@ -903,6 +1196,11 @@ class InteractionResponse(Generic[ClientT]):
             You specified both ``embed`` and ``embeds``.
         InteractionResponded
             This interaction has already been responded to before.
+
+        Returns
+        -------
+        Optional[:class:`InteractionCallbackResponse`]
+            The interaction callback data, or ``None`` if editing the message was not possible.
         """
         if self._response_type:
             raise InteractionResponded(self._parent)
@@ -914,7 +1212,7 @@ class InteractionResponse(Generic[ClientT]):
             message_id = msg.id
             # If this was invoked via an application command then we can use its original interaction ID
             # Since this is used as a cache key for view updates
-            original_interaction_id = msg.interaction.id if msg.interaction is not None else None
+            original_interaction_id = msg.interaction_metadata.id if msg.interaction_metadata is not None else None
         else:
             message_id = None
             original_interaction_id = None
@@ -945,7 +1243,7 @@ class InteractionResponse(Generic[ClientT]):
         )
 
         http = parent._state.http
-        await adapter.create_interaction_response(
+        response = await adapter.create_interaction_response(
             parent.id,
             parent.token,
             session=parent._session,
@@ -970,10 +1268,20 @@ class InteractionResponse(Generic[ClientT]):
 
             asyncio.create_task(inner_call())
 
-    async def send_modal(self, modal: Modal, /) -> None:
+        return InteractionCallbackResponse(
+            data=response,
+            parent=self._parent,
+            state=self._parent._state,
+            type=self._response_type,
+        )
+
+    async def send_modal(self, modal: Modal, /) -> InteractionCallbackResponse[ClientT]:
         """|coro|
 
         Responds to this interaction by sending a modal.
+
+        .. versionchanged:: 2.5
+            This now returns a :class:`InteractionCallbackResponse` instance.
 
         Parameters
         -----------
@@ -986,6 +1294,11 @@ class InteractionResponse(Generic[ClientT]):
             Sending the modal failed.
         InteractionResponded
             This interaction has already been responded to before.
+
+        Returns
+        -------
+        :class:`InteractionCallbackResponse`
+            The interaction callback data.
         """
         if self._response_type:
             raise InteractionResponded(self._parent)
@@ -996,7 +1309,7 @@ class InteractionResponse(Generic[ClientT]):
         http = parent._state.http
 
         params = interaction_response_params(InteractionResponseType.modal.value, modal.to_dict())
-        await adapter.create_interaction_response(
+        response = await adapter.create_interaction_response(
             parent.id,
             parent.token,
             session=parent._session,
@@ -1008,37 +1321,12 @@ class InteractionResponse(Generic[ClientT]):
             self._parent._state.store_view(modal)
         self._response_type = InteractionResponseType.modal
 
-    async def require_premium(self) -> None:
-        """|coro|
-
-        Sends a message to the user prompting them that a premium purchase is required for this interaction.
-
-        This type of response is only available for applications that have a premium SKU set up.
-
-        Raises
-        -------
-        HTTPException
-            Sending the response failed.
-        InteractionResponded
-            This interaction has already been responded to before.
-        """
-        if self._response_type:
-            raise InteractionResponded(self._parent)
-
-        parent = self._parent
-        adapter = async_context.get()
-        http = parent._state.http
-
-        params = interaction_response_params(InteractionResponseType.premium_required.value)
-        await adapter.create_interaction_response(
-            parent.id,
-            parent.token,
-            session=parent._session,
-            proxy=http.proxy,
-            proxy_auth=http.proxy_auth,
-            params=params,
+        return InteractionCallbackResponse(
+            data=response,
+            parent=self._parent,
+            state=self._parent._state,
+            type=self._response_type,
         )
-        self._response_type = InteractionResponseType.premium_required
 
     async def autocomplete(self, choices: Sequence[Choice[ChoiceT]]) -> None:
         """|coro|
@@ -1131,6 +1419,18 @@ class InteractionMessage(Message):
     __slots__ = ()
     _state: _InteractionMessageState
 
+    @overload
+    async def edit(
+        self,
+        *,
+        attachments: Sequence[Union[Attachment, File]] = MISSING,
+        view: LayoutView,
+        allowed_mentions: Optional[AllowedMentions] = None,
+        delete_after: Optional[float] = None,
+    ) -> InteractionMessage:
+        ...
+
+    @overload
     async def edit(
         self,
         *,
@@ -1141,6 +1441,21 @@ class InteractionMessage(Message):
         view: Optional[View] = MISSING,
         allowed_mentions: Optional[AllowedMentions] = None,
         delete_after: Optional[float] = None,
+        poll: Poll = MISSING,
+    ) -> InteractionMessage:
+        ...
+
+    async def edit(
+        self,
+        *,
+        content: Optional[str] = MISSING,
+        embeds: Sequence[Embed] = MISSING,
+        embed: Optional[Embed] = MISSING,
+        attachments: Sequence[Union[Attachment, File]] = MISSING,
+        view: Optional[BaseView] = MISSING,
+        allowed_mentions: Optional[AllowedMentions] = None,
+        delete_after: Optional[float] = None,
+        poll: Poll = MISSING,
     ) -> InteractionMessage:
         """|coro|
 
@@ -1166,15 +1481,27 @@ class InteractionMessage(Message):
         allowed_mentions: :class:`AllowedMentions`
             Controls the mentions being processed in this message.
             See :meth:`.abc.Messageable.send` for more information.
-        view: Optional[:class:`~discord.ui.View`]
+        view: Optional[Union[:class:`~discord.ui.View`, :class:`~discord.ui.LayoutView`]]
             The updated view to update this message with. If ``None`` is passed then
             the view is removed.
+
+            .. versionchanged:: 2.6
+                This now accepts :class:`~discord.ui.LayoutView` instances.
         delete_after: Optional[:class:`float`]
             If provided, the number of seconds to wait in the background
             before deleting the message we just sent. If the deletion fails,
             then it is silently ignored.
 
             .. versionadded:: 2.2
+        poll: :class:`~discord.Poll`
+            The poll to create when editing the message.
+
+            .. versionadded:: 2.5
+
+            .. note::
+
+                This is only accepted if the interaction response's :attr:`InteractionResponse.type`
+                attribute is :attr:`InteractionResponseType.deferred_channel_message`.
 
         Raises
         -------
@@ -1197,8 +1524,9 @@ class InteractionMessage(Message):
             embeds=embeds,
             embed=embed,
             attachments=attachments,
-            view=view,
+            view=view,  # type: ignore
             allowed_mentions=allowed_mentions,
+            poll=poll,
         )
         if delete_after is not None:
             await self.delete(delay=delete_after)
